@@ -28,10 +28,25 @@ class ModelUnavailable(RuntimeError):
 
 
 def _read_artifact(env_b64: str, path: str) -> bytes | None:
-    """Encrypted artifact bytes, from a base64 env var (for hosting) or a file."""
-    blob = os.environ.get(env_b64)
-    if blob:
-        return base64.b64decode(blob)
+    """Encrypted artifact bytes, from base64 env var(s) (for hosting) or a file.
+
+    Supports a single var (e.g. PARAMS_ENC_B64) OR numbered chunks
+    (PARAMS_ENC_B64_0, _1, ...) concatenated in order — because a single env var
+    is capped at ~128 KB on Linux, so a large model is split across a few.
+    """
+    single = os.environ.get(env_b64)
+    if single:
+        return base64.b64decode(single)
+    chunks = []
+    i = 0
+    while True:
+        v = os.environ.get(f"{env_b64}_{i}")
+        if v is None:
+            break
+        chunks.append(v)
+        i += 1
+    if chunks:
+        return base64.b64decode("".join(chunks))
     if os.path.exists(path):
         with open(path, "rb") as f:
             return f.read()

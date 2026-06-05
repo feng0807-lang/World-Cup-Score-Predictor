@@ -13,11 +13,18 @@ services:
       - key: PYTHON_VERSION
         value: "3.12.7"
       # --- secrets: paste the output of `python make_deploy_env.py` ---
+      # A single env var is capped at ~128 KB on Linux, so the large params
+      # value is split into numbered chunks; fill the ones the script prints
+      # (leave the rest blank).
       - key: WORLDCUP_KEY
         sync: false
       - key: ENGINE_ENC_B64
         sync: false
-      - key: PARAMS_ENC_B64
+      - key: PARAMS_ENC_B64_0
+        sync: false
+      - key: PARAMS_ENC_B64_1
+        sync: false
+      - key: PARAMS_ENC_B64_2
         sync: false
       # --- optional: live bookmaker odds ---
       - key: ODDS_API_KEY
