@@ -66,6 +66,28 @@ python secure_build.py --purge   # (optional) also delete the plaintext sources
 
 Requires: `scikit-learn`, `scipy`, `pandas`, `numpy`, `cryptography`.
 
+## Deploy so others can predict — without publishing the model
+
+The repo is public and the model is private, yet the **hosted** app still works
+for everyone, because the algorithm only ever runs on your server (users get
+JSON results, never the model or source). The model reaches the host through
+**secret environment variables**, not git:
+
+1. Locally (where your model files exist) generate the secrets:
+   ```bash
+   python make_deploy_env.py
+   ```
+   This prints `WORLDCUP_KEY`, `ENGINE_ENC_B64`, `PARAMS_ENC_B64`.
+2. On your host (Render / Railway / Fly.io / a VPS): deploy this GitHub repo,
+   set those three values as **secret env vars**, install `requirements.txt`,
+   and start with `python server.py` (it auto-binds `0.0.0.0:$PORT`; a
+   `Procfile` is included).
+3. Share the URL. Visitors predict and simulate in the browser; the model files
+   never leave your machine/host and are never in the repo.
+
+If the env vars (or local model files) are absent, the app runs but shows a
+"model not included" notice instead of predicting.
+
 ## Bookmaker odds & value
 
 The **Match Predictor** tab compares the model against the betting market.

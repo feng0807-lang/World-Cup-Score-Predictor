@@ -7,6 +7,7 @@ exposes the prediction functions. Everything is cached after first load.
 
 from __future__ import annotations
 
+import base64
 import os
 import pickle
 import types
@@ -26,13 +27,25 @@ class ModelUnavailable(RuntimeError):
     """Raised when the encrypted model files / key are not present."""
 
 
+def _read_artifact(env_b64: str, path: str) -> bytes | None:
+    """Encrypted artifact bytes, from a base64 env var (for hosting) or a file."""
+    blob = os.environ.get(env_b64)
+    if blob:
+        return base64.b64decode(blob)
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return f.read()
+    return None
+
+
 def available() -> bool:
-    """True if the encrypted model + key are all present (without decrypting)."""
+    """True if key + both encrypted artifacts are reachable (file OR env)."""
     try:
         _load_key()
     except RuntimeError:
         return False
-    return os.path.exists(ENGINE_ENC) and os.path.exists(PARAMS_ENC)
+    return (_read_artifact("ENGINE_ENC_B64", ENGINE_ENC) is not None
+            and _read_artifact("PARAMS_ENC_B64", PARAMS_ENC) is not None)
 
 
 def _load_key() -> bytes:
@@ -52,22 +65,22 @@ def _ensure_loaded():
     global _engine, _params
     if _engine is not None and _params is not None:
         return
-    if not (os.path.exists(ENGINE_ENC) and os.path.exists(PARAMS_ENC)):
+    engine_bytes = _read_artifact("ENGINE_ENC_B64", ENGINE_ENC)
+    params_bytes = _read_artifact("PARAMS_ENC_B64", PARAMS_ENC)
+    if engine_bytes is None or params_bytes is None:
         raise ModelUnavailable(
-            "Encrypted model not found (engine.enc / params.enc). This repo ships "
-            "without the proprietary model — add your own model files + key to enable "
-            "predictions."
+            "Encrypted model not found. Provide engine.enc/params.enc (+ key), or set "
+            "ENGINE_ENC_B64 / PARAMS_ENC_B64 / WORLDCUP_KEY env vars when hosting. This "
+            "public repo ships without the proprietary model."
         )
     fernet = Fernet(_load_key())
 
-    with open(ENGINE_ENC, "rb") as f:
-        src = fernet.decrypt(f.read()).decode("utf-8")
+    src = fernet.decrypt(engine_bytes).decode("utf-8")
     mod = types.ModuleType("worldcup_engine")
     exec(compile(src, "<engine>", "exec"), mod.__dict__)
     _engine = mod
 
-    with open(PARAMS_ENC, "rb") as f:
-        _params = pickle.loads(fernet.decrypt(f.read()))
+    _params = pickle.loads(fernet.decrypt(params_bytes))
 
 
 def expected_goals(home, away, delta_home=0.0, delta_away=0.0, neutral=True):

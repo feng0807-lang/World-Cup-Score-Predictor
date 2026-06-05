@@ -302,9 +302,15 @@ class Handler(BaseHTTPRequestHandler):
         return self._send({"team": team, "effectiveElo": eff})
 
 
-def main(port: int = 8000):
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"Dashboard running at http://localhost:{port}  (Ctrl+C to stop)")
+def main(port: int | None = None, host: str | None = None):
+    # Hosting platforms (Render/Railway/Fly/…) inject $PORT and need 0.0.0.0;
+    # locally we stay on localhost.
+    port = port or int(os.environ.get("PORT", 8000))
+    default_host = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
+    host = host or os.environ.get("HOST", default_host)
+    server = ThreadingHTTPServer((host, port), Handler)
+    where = "all interfaces" if host == "0.0.0.0" else f"http://localhost:{port}"
+    print(f"Dashboard running on {host}:{port}  ({where})  (Ctrl+C to stop)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -313,4 +319,5 @@ def main(port: int = 8000):
 
 if __name__ == "__main__":
     import sys
-    main(int(sys.argv[1]) if len(sys.argv) > 1 else 8000)
+    cli_port = int(sys.argv[1]) if len(sys.argv) > 1 else None
+    main(cli_port)
