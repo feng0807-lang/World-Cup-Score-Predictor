@@ -1,0 +1,11 @@
+# Core prediction stack
+numpy>=1.26
+scipy>=1.11
+pandas>=2.0
+scikit-learn>=1.4
+
+# Model encryption (runtime decrypt of the proprietary engine)
+cryptography>=42.0
+
+# Note: the web dashboard/server uses only the Python standard library
+# (http.server) — no Flask/FastAPI required.

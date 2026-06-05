@@ -1,0 +1,27 @@
+# ───────── Secrets — NEVER commit ─────────
+model.key
+odds_api.key
+
+# ───────── Proprietary model (kept private) ─────────
+# The algorithm, trained parameters and encrypted artifacts stay out of the
+# public repo. A clone runs the dashboard but not predictions until a model
+# is supplied locally.
+engine_source.py
+train_model.py
+model_params.pkl
+engine.enc
+params.enc
+
+# ───────── Local data / personal archive ─────────
+data/
+manual_odds.json
+
+# ───────── Large training dataset (re-download to retrain) ─────────
+results.csv
+
+# ───────── Python / editor junk ─────────
+__pycache__/
+*.pyc
+_backup/
+*.tmp
+.DS_Store

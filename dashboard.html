@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World Cup Predictor</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--line:#272e3a;--txt:#e6edf3;--mut:#8b949e;
+        --acc:#3fb950;--acc2:#58a6ff;--warn:#d29922;}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt)}
+  header{padding:20px 28px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+  header h1{font-size:20px;margin:0}
+  header .ball{font-size:24px}
+  .tabs{display:flex;gap:6px;padding:14px 28px 0}
+  .tab{padding:9px 16px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;
+       background:var(--card);color:var(--mut);cursor:pointer}
+  .tab.active{color:var(--txt);border-color:var(--acc2);box-shadow:inset 0 -2px 0 var(--acc2)}
+  main{padding:24px 28px;max-width:1100px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:20px}
+  h2{font-size:15px;margin:0 0 14px;color:var(--acc2);text-transform:uppercase;letter-spacing:.5px}
+  select,input,button{font:inherit;color:var(--txt);background:#0d1117;border:1px solid var(--line);
+       border-radius:8px;padding:8px 10px}
+  button{cursor:pointer;background:var(--acc2);color:#fff;border:none;font-weight:600}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
+  button:hover{filter:brightness(1.1)}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .bar{height:8px;border-radius:4px;background:var(--acc);display:inline-block;vertical-align:middle}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;background:#21262d;color:var(--mut);font-size:12px}
+  .big{font-size:30px;font-weight:700}
+  .muted{color:var(--mut)}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;text-align:center}
+  .winp{font-size:22px;font-weight:700}
+  .starter{color:var(--acc)}
+  .hidden{display:none}
+  input[type=number]{width:64px}
+  .note{font-size:12px;color:var(--warn);margin-top:8px}
+  .spin{color:var(--mut)}
+  .banner{background:#3d2b12;border:1px solid var(--warn);color:#f0d8a0;
+          padding:10px 16px;margin:0;font-size:13px}
+  /* --- mobile / small screens --- */
+  @media (max-width:680px){
+    header{padding:14px 16px;flex-wrap:wrap;gap:8px}
+    header h1{font-size:17px}
+    .tabs{padding:10px 12px 0;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+    .tab{flex:0 0 auto;padding:8px 12px;font-size:13px}
+    main{padding:14px 12px}
+    .card{padding:14px;border-radius:10px}
+    .grid3{grid-template-columns:1fr;gap:8px}
+    .winp{font-size:20px}
+    .big{font-size:24px}
+    /* let wide tables scroll horizontally instead of overflowing */
+    table{display:block;overflow-x:auto;white-space:nowrap}
+    select,input{max-width:100%}
+    input[type=range]{width:100%}
+  }
+</style>
+</head>
+<body>
+<header><span class="ball">⚽</span><h1>World Cup Score Predictor</h1>
+  <span class="pill" id="modelTag">loading model…</span></header>
+<div id="modelBanner" class="banner hidden">⚠ The prediction model isn't included in this
+  public build. Squad editing, manual odds and history work; predictions/simulation need
+  the model files. See the README to add your own.</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="match">Match Predictor</div>
+  <div class="tab" data-tab="tourney">Tournament Table</div>
+  <div class="tab" data-tab="lineup">Starting XI Editor</div>
+  <div class="tab" data-tab="history">History &amp; Backtrack</div>
+</div>
+
+<main>
+  <!-- MATCH -->
+  <section id="tab-match">
+    <div class="card">
+      <h2>Predict a match</h2>
+      <div class="row">
+        <select id="home"></select>
+        <span class="muted">vs</span>
+        <select id="away"></select>
+        <button onclick="predict()">Predict</button>
+      </div>
+      <div id="matchResult" class="hidden" style="margin-top:18px">
+        <div class="grid3">
+          <div><div class="muted" id="hName"></div><div class="winp starter" id="hWin"></div></div>
+          <div><div class="muted">Draw</div><div class="winp" id="dWin"></div></div>
+          <div><div class="muted" id="aName"></div><div class="winp" id="aWin"></div></div>
+        </div>
+        <div style="text-align:center;margin:18px 0">
+          <div class="muted">Expected / most likely score</div>
+          <div class="big"><span id="exp"></span> &nbsp;·&nbsp; <span id="ml" class="muted"></span></div>
+        </div>
+        <table><thead><tr><th>Scoreline</th><th class="num">Probability</th><th></th></tr></thead>
+          <tbody id="scoreBody"></tbody></table>
+      </div>
+    </div>
+
+    <!-- MARKET & VALUE -->
+    <div class="card" id="oddsCard">
+      <h2>Bookmaker odds &amp; value</h2>
+      <div class="row" style="font-size:13px">
+        <span class="muted">Odds API key:</span>
+        <input id="oddsKey" type="password" placeholder="the-odds-api.com key (optional)" style="width:230px">
+        <button class="ghost" onclick="saveOddsKey()">Save key</button>
+        <span id="oddsKeyStatus" class="muted"></span>
+      </div>
+      <p class="note">No key? Enter the decimal odds from your bookie below. Live odds
+        cover Pinnacle, Bet365, William Hill and more.</p>
+      <div class="row" style="font-size:13px">
+        <span class="muted">Manual:</span>
+        <input id="oddH" type="number" step="0.01" placeholder="home" style="width:72px">
+        <input id="oddD" type="number" step="0.01" placeholder="draw" style="width:72px">
+        <input id="oddA" type="number" step="0.01" placeholder="away" style="width:72px">
+        <input id="oddBook" placeholder="bookmaker" style="width:110px">
+        <button onclick="getOdds(true)">Use these</button>
+        <button class="ghost" onclick="getOdds(false)">Fetch live odds</button>
+      </div>
+      <div class="row" style="font-size:13px;margin-top:6px">
+        <label><input type="checkbox" id="blendOn" onchange="getOdds(false)"> Blend market into model</label>
+        <input type="range" id="blendW" min="0" max="100" value="50" oninput="blendLbl()" onchange="getOdds(false)">
+        <span id="blendLbl" class="muted">50% model / 50% market</span>
+      </div>
+      <div id="oddsResult" class="hidden" style="margin-top:14px">
+        <div id="oddsMeta" class="muted" style="font-size:12px;margin-bottom:8px"></div>
+        <table>
+          <thead><tr><th>Outcome</th><th class="num">Model</th><th class="num">Market</th>
+            <th class="num">Edge</th><th>Best price</th></tr></thead>
+          <tbody id="oddsBody"></tbody>
+        </table>
+        <div id="blendRow" class="hidden" style="margin-top:10px"></div>
+      </div>
+      <div id="oddsMsg" class="note hidden"></div>
+    </div>
+  </section>
+
+  <!-- TOURNAMENT -->
+  <section id="tab-tourney" class="hidden">
+    <div class="card">
+      <h2>Tournament simulation</h2>
+      <div class="row">
+        <label>Simulations:
+          <select id="runs"><option>2000</option><option selected>5000</option><option>10000</option></select>
+        </label>
+        <button onclick="simulate()">Run simulation</button>
+        <input id="simLabel" placeholder="label (optional)" style="width:150px">
+        <button class="ghost" onclick="saveSim()">💾 Save run</button>
+        <span id="simStatus" class="spin"></span>
+      </div>
+      <table style="margin-top:14px">
+        <thead><tr><th>#</th><th>Team</th><th class="num">R32</th><th class="num">R16</th>
+          <th class="num">QF</th><th class="num">SF</th><th class="num">Final</th>
+          <th class="num">Champion</th></tr></thead>
+        <tbody id="simBody"></tbody>
+      </table>
+    </div>
+
+    <!-- WINNER ODDS vs MODEL -->
+    <div class="card">
+      <h2>Title odds: model vs market</h2>
+      <div class="row" style="font-size:13px">
+        <button onclick="loadOutrights(false)">Compare to winner odds</button>
+        <span id="outStatus" class="spin"></span>
+      </div>
+      <p class="note">Live outright odds need an API key. No key? Paste lines like
+        <code>Brazil 5.5</code> (team &amp; decimal odds), one per line, then "Use these".</p>
+      <div class="row" style="font-size:13px;align-items:flex-start">
+        <textarea id="outManual" rows="3" placeholder="Brazil 5.5&#10;France 6&#10;Spain 6.5"
+          style="width:240px;font:inherit;background:#0d1117;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px"></textarea>
+        <button onclick="loadOutrights(true)">Use these</button>
+      </div>
+      <table style="margin-top:12px">
+        <thead><tr><th>#</th><th>Team</th><th class="num">Model (title)</th>
+          <th class="num">Market</th><th class="num">Edge</th><th>Best price</th></tr></thead>
+        <tbody id="outBody"></tbody>
+      </table>
+      <div id="outMsg" class="note hidden"></div>
+    </div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="tab-history" class="hidden">
+    <div class="card">
+      <h2>Saved simulations — reload &amp; backtrack</h2>
+      <p class="note">Every run you save is stored in the <code>data/simulations/</code>
+        folder with the exact lineup state used. "Recalc" re-runs the simulation from
+        that saved state so you can backtrack and reproduce or extend it.</p>
+      <table>
+        <thead><tr><th>Saved</th><th>Label</th><th class="num">Runs</th>
+          <th>Top pick</th><th class="num">Lineup edits</th><th></th></tr></thead>
+        <tbody id="simsBody"></tbody>
+      </table>
+      <div id="recalcOut" class="hidden" style="margin-top:14px">
+        <div id="recalcMeta" class="muted" style="font-size:12px;margin-bottom:6px"></div>
+        <table><thead><tr><th>#</th><th>Team</th><th class="num">R16</th>
+          <th class="num">QF</th><th class="num">SF</th><th class="num">Final</th>
+          <th class="num">Champion</th></tr></thead><tbody id="recalcBody"></tbody></table>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Input journal</h2>
+      <p class="note">Everything you enter (manual odds, outright odds, lineup saves)
+        is logged to <code>data/history.jsonl</code> with a timestamp.</p>
+      <div class="row" style="font-size:13px">
+        <label>Date <input id="histDate" type="date" onchange="loadHistory()"></label>
+        <label>Type
+          <select id="histType" onchange="loadHistory()">
+            <option value="">all</option><option value="match_odds">match odds</option>
+            <option value="outright_odds">outright odds</option>
+            <option value="lineup">lineup</option><option value="simulation">simulation</option>
+          </select></label>
+        <button class="ghost" onclick="loadHistory()">Refresh</button>
+      </div>
+      <table style="margin-top:10px">
+        <thead><tr><th>When</th><th>Type</th><th>Detail</th></tr></thead>
+        <tbody id="histBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- LINEUP -->
+  <section id="tab-lineup" class="hidden">
+    <div class="card">
+      <h2>Edit starting XI</h2>
+      <div class="row">
+        <select id="lineupTeam" onchange="loadSquad()"></select>
+        <span class="pill">Base Elo: <b id="baseElo">–</b></span>
+        <span class="pill">Effective Elo: <b id="effElo" class="starter">–</b></span>
+        <button onclick="saveSquad()">Save lineup</button>
+        <span id="saveStatus" class="spin"></span>
+      </div>
+      <p class="note">Tick exactly 11 players as starters. The starting XI's average rating
+        moves the team's effective Elo, which feeds the predictions.</p>
+      <table><thead><tr><th>Start</th><th class="num">#</th><th>Player</th><th>Pos</th><th class="num">Rating</th></tr></thead>
+        <tbody id="squadBody"></tbody></table>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+let teams = [];
+
+async function init(){
+  const r = await fetch('/api/teams'); const d = await r.json();
+  teams = d.teams;
+  const opts = teams.map(t=>`<option value="${t.team}">${t.team} (${t.elo})</option>`).join('');
+  $('#home').innerHTML = opts; $('#away').innerHTML = opts;
+  $('#lineupTeam').innerHTML = teams.map(t=>`<option>${t.team}</option>`).join('');
+  $('#away').selectedIndex = 1;
+  loadSquad();
+  try{
+    const mi = await (await fetch('/api/modelinfo')).json();
+    if(mi.modelAvailable){
+      $('#modelTag').textContent =
+        `🔒 Encrypted Dixon-Coles + GBM · ${mi.teams_rated} teams trained`;
+    }else{
+      $('#modelTag').textContent='⚠ model not loaded';
+      $('#modelBanner').classList.remove('hidden');
+    }
+    $('#oddsKeyStatus').textContent = mi.oddsApiKey ? '✓ key set' : '(no key — manual only)';
+  }catch(e){ $('#modelTag').textContent='model'; }
+}
+
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  ['match','tourney','lineup','history'].forEach(name=>
+    $('#tab-'+name).classList.toggle('hidden', name!==t.dataset.tab));
+  if(t.dataset.tab==='history') loadHistory();
+});
+
+async function predict(){
+  const h=$('#home').value, a=$('#away').value;
+  const r=await fetch(`/api/predict?home=${encodeURIComponent(h)}&away=${encodeURIComponent(a)}`);
+  const d=await r.json();
+  if(d.error==='model_unavailable'){alert('The prediction model isn\'t included in this build.');return;}
+  if(d.error){alert(d.error);return;}
+  $('#matchResult').classList.remove('hidden');
+  $('#oddsResult').classList.add('hidden'); $('#oddsMsg').classList.add('hidden');
+  $('#hName').textContent=`${d.home} win`; $('#aName').textContent=`${d.away} win`;
+  $('#hWin').textContent=(d.pHome*100).toFixed(1)+'%';
+  $('#dWin').textContent=(d.pDraw*100).toFixed(1)+'%';
+  $('#aWin').textContent=(d.pAway*100).toFixed(1)+'%';
+  $('#exp').textContent=`${d.expected[0]} - ${d.expected[1]}`;
+  $('#ml').textContent=`most likely ${d.mostLikely[0]}-${d.mostLikely[1]}`;
+  const max=Math.max(...d.scorelines.map(s=>s.p));
+  $('#scoreBody').innerHTML=d.scorelines.map(s=>
+    `<tr><td>${s.score}</td><td class="num">${(s.p*100).toFixed(1)}%</td>
+     <td><span class="bar" style="width:${(s.p/max*120).toFixed(0)}px"></span></td></tr>`).join('');
+}
+
+function blendLbl(){
+  const w=+$('#blendW').value;
+  $('#blendLbl').textContent=`${w}% model / ${100-w}% market`;
+}
+async function saveOddsKey(){
+  const key=$('#oddsKey').value.trim(); if(!key) return;
+  await fetch('/api/oddskey',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({key})});
+  $('#oddsKeyStatus').textContent='✓ key saved';
+}
+const _pp = x => (x*100).toFixed(1)+'%';
+async function getOdds(manual){
+  const h=$('#home').value, a=$('#away').value;
+  const blend = $('#blendOn').checked ? (+$('#blendW').value/100) : null;
+  let d;
+  if(manual){
+    const body={home:+$('#oddH').value,draw:+$('#oddD').value,away:+$('#oddA').value,
+      bookmaker:$('#oddBook').value||'manual',blend};
+    if(!body.home||!body.draw||!body.away){alert('Enter home/draw/away decimal odds');return;}
+    d=await (await fetch(`/api/odds?home=${encodeURIComponent(h)}&away=${encodeURIComponent(a)}`,
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  }else{
+    let u=`/api/odds?home=${encodeURIComponent(h)}&away=${encodeURIComponent(a)}`;
+    if(blend!==null) u+=`&blend=${blend}`;
+    d=await (await fetch(u)).json();
+  }
+  renderOdds(d);
+}
+function renderOdds(d){
+  const m=d.market||{};
+  if(!m.available){
+    $('#oddsResult').classList.add('hidden');
+    const msg=$('#oddsMsg'); msg.classList.remove('hidden');
+    const reasons={no_api_key:'No API key set — enter odds manually above, or save a key.',
+      bad_api_key:'API key rejected (invalid/expired) — check it or enter odds manually.',
+      api_unreachable:'Couldn\'t reach the odds API — enter odds manually.',
+      match_not_listed:'This match isn\'t in the live odds feed right now — enter odds manually.',
+      error:'Odds fetch error: '+(m.detail||''), no_data:'No odds available — enter manually.'};
+    msg.textContent=reasons[m.reason]||('No market odds available ('+(m.reason||'')+').');
+    return;
+  }
+  $('#oddsMsg').classList.add('hidden');
+  $('#oddsResult').classList.remove('hidden');
+  const rem=m.requestsRemaining!=null?` · ${m.requestsRemaining} API requests left`:'';
+  $('#oddsMeta').textContent=`Source: ${m.source} · ${m.bookmakerCount} bookmaker(s)${m.cached?' (cached)':''}${rem}`;
+  const names={home:d.home,draw:'Draw',away:d.away};
+  $('#oddsBody').innerHTML=['home','draw','away'].map(k=>{
+    const mod=d.model[k], mk=m.consensus[k], edge=d.value?d.value[k]:null;
+    const best=m.bestOdds[k];
+    const good = edge!=null && edge>0.02;
+    return `<tr><td>${names[k]}</td><td class="num">${_pp(mod)}</td>
+      <td class="num">${mk!=null?_pp(mk):'–'}</td>
+      <td class="num" style="color:${good?'var(--acc)':edge<0?'var(--mut)':'inherit'}">
+        ${edge!=null?(edge>0?'+':'')+(edge*100).toFixed(1)+'%':'–'}${good?' ✓':''}</td>
+      <td>${best?best[0].toFixed(2)+' ('+best[1]+')':'–'}</td></tr>`;
+  }).join('');
+  const br=$('#blendRow');
+  if(d.blended){
+    br.classList.remove('hidden');
+    br.innerHTML=`<b>Blended (${Math.round(d.blendWeight*100)}% model):</b> `+
+      `${d.home} ${_pp(d.blended.home)} · Draw ${_pp(d.blended.draw)} · ${d.away} ${_pp(d.blended.away)}`;
+  }else br.classList.add('hidden');
+}
+
+async function simulate(){
+  $('#simStatus').textContent='running…';
+  const runs=$('#runs').value;
+  const r=await fetch('/api/simulate?runs='+runs); const d=await r.json();
+  if(d.error){$('#simStatus').textContent='model not available in this build';return;}
+  $('#simStatus').textContent=`${d.runs.toLocaleString()} simulations`;
+  const max=Math.max(...d.rows.map(x=>x.champion));
+  $('#simBody').innerHTML=d.rows.map((x,i)=>
+    `<tr><td class="muted">${i+1}</td><td>${x.team}</td>
+     <td class="num">${x.round32}%</td><td class="num">${x.round16}%</td>
+     <td class="num">${x.quarter}%</td><td class="num">${x.semi}%</td>
+     <td class="num">${x.final}%</td>
+     <td class="num"><b class="starter">${x.champion}%</b>
+       <span class="bar" style="width:${(x.champion/max*60).toFixed(0)}px"></span></td></tr>`).join('');
+}
+
+async function saveSim(){
+  $('#simStatus').textContent='saving run…';
+  const body={label:$('#simLabel').value.trim(), runs:+$('#runs').value};
+  const d=await (await fetch('/api/savesim',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  $('#simStatus').textContent=`✓ saved "${d.label}" (id ${d.id})`;
+}
+async function loadHistory(){
+  // saved simulations
+  const sims=(await (await fetch('/api/sims')).json()).simulations||[];
+  $('#simsBody').innerHTML = sims.length ? sims.map(s=>
+    `<tr><td class="muted">${s.date} ${s.ts.slice(11,16)}</td><td>${s.label}</td>
+      <td class="num">${s.runs.toLocaleString()}</td><td>${s.topPick||'–'}</td>
+      <td class="num">${s.lineupChanges}</td>
+      <td><button class="ghost" onclick="recalc('${s.id}')">↻ Recalc</button></td></tr>`
+    ).join('') : '<tr><td colspan="6" class="muted">No saved runs yet — use 💾 Save run in the Tournament tab.</td></tr>';
+  // journal
+  let u='/api/history?';
+  const dt=$('#histDate').value, tp=$('#histType').value;
+  if(dt) u+='date='+dt+'&'; if(tp) u+='type='+tp;
+  const ents=(await (await fetch(u)).json()).entries||[];
+  $('#histBody').innerHTML = ents.length ? ents.map(e=>{
+    const dd=e.data||{}; let detail='';
+    if(e.type==='match_odds') detail=`${dd.home} vs ${dd.away}: ${dd.odds.home}/${dd.odds.draw}/${dd.odds.away} (${dd.bookmaker})`;
+    else if(e.type==='outright_odds') detail=Object.entries(dd.odds||{}).map(([k,v])=>k+' '+v).join(', ');
+    else if(e.type==='lineup') detail=`${dd.team} → eff Elo ${Math.round(dd.effectiveElo)}`;
+    else if(e.type==='simulation') detail=`${dd.label} — top ${dd.topPick} (${dd.runs} runs)`;
+    return `<tr><td class="muted">${e.date} ${e.time}</td><td><span class="pill">${e.type}</span></td><td>${detail}</td></tr>`;
+  }).join('') : '<tr><td colspan="3" class="muted">No entries.</td></tr>';
+}
+async function recalc(id){
+  $('#recalcMeta').textContent='recomputing from saved lineup state…';
+  $('#recalcOut').classList.remove('hidden');
+  const d=await (await fetch('/api/recalc',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})).json();
+  if(d.error){$('#recalcMeta').textContent=d.error;return;}
+  $('#recalcMeta').textContent=`Backtracked from ${d.basedOn} · ${d.runs.toLocaleString()} runs · saved as ${d.id}`;
+  $('#recalcBody').innerHTML=d.rows.slice(0,16).map((x,i)=>
+    `<tr><td class="muted">${i+1}</td><td>${x.team}</td><td class="num">${x.round16}%</td>
+     <td class="num">${x.quarter}%</td><td class="num">${x.semi}%</td>
+     <td class="num">${x.final}%</td><td class="num"><b class="starter">${x.champion}%</b></td></tr>`).join('');
+  loadHistory();
+}
+
+async function loadOutrights(manual){
+  $('#outStatus').textContent='running simulation…';
+  const runs=$('#runs').value;
+  let d;
+  try{
+    if(manual){
+      const odds={};
+      $('#outManual').value.trim().split('\n').forEach(line=>{
+        const m=line.trim().match(/^(.+?)[\s,]+([\d.]+)$/);
+        if(m) odds[m[1].trim()]=parseFloat(m[2]);
+      });
+      if(!Object.keys(odds).length){alert('Enter lines like "Brazil 5.5"');$('#outStatus').textContent='';return;}
+      d=await (await fetch('/api/outrights',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({odds,runs:+runs})})).json();
+    }else{
+      d=await (await fetch('/api/outrights?runs='+runs)).json();
+    }
+  }catch(e){$('#outStatus').textContent='error';return;}
+  $('#outStatus').textContent=d.marketAvailable
+    ? `market: ${d.marketSource} · ${d.bookmakerCount||''} book(s)`+(d.requestsRemaining!=null?` · ${d.requestsRemaining} req left`:'')
+    : 'model only';
+  const msg=$('#outMsg');
+  if(!d.marketAvailable){
+    const reasons={no_api_key:'No API key — paste outright odds manually above to compare.',
+      bad_api_key:'API key rejected — check it or enter odds manually.',
+      no_outrights:'No live winner market available — enter odds manually.',
+      api_unreachable:'Couldn\'t reach the odds API — enter odds manually.'};
+    msg.classList.remove('hidden'); msg.textContent=reasons[d.reason]||'Showing model title odds only.';
+  }else msg.classList.add('hidden');
+  $('#outBody').innerHTML=d.rows.slice(0,24).map((r,i)=>{
+    const good=r.edge!=null&&r.edge>1.0;
+    return `<tr><td class="muted">${i+1}</td><td>${r.team}</td>
+      <td class="num">${r.model.toFixed(1)}%</td>
+      <td class="num">${r.market!=null?r.market.toFixed(1)+'%':'–'}</td>
+      <td class="num" style="color:${good?'var(--acc)':(r.edge<0?'var(--mut)':'inherit')}">
+        ${r.edge!=null?(r.edge>0?'+':'')+r.edge.toFixed(1)+'%':'–'}${good?' ✓':''}</td>
+      <td>${r.best?r.best[0].toFixed(1)+' ('+r.best[1]+')':'–'}</td></tr>`;
+  }).join('');
+}
+
+let currentSquad=[];
+async function loadSquad(){
+  const team=$('#lineupTeam').value;
+  const r=await fetch('/api/squad?team='+encodeURIComponent(team)); const d=await r.json();
+  if(d.error){return;}
+  currentSquad=d.players;
+  $('#baseElo').textContent=d.baseElo;
+  $('#effElo').textContent=d.effectiveElo;
+  renderSquad();
+}
+function renderSquad(){
+  $('#squadBody').innerHTML=currentSquad.map(p=>
+    `<tr><td><input type="checkbox" data-id="${p.id}" ${p.starter?'checked':''}></td>
+      <td class="num muted">${p.number??''}</td>
+      <td>${p.name}</td><td><span class="pill">${p.pos}</span></td>
+      <td class="num"><input type="number" data-rid="${p.id}" value="${p.rating}" min="1" max="99"></td></tr>`).join('');
+}
+async function saveSquad(){
+  const checks=[...document.querySelectorAll('[data-id]')];
+  const starters=checks.filter(c=>c.checked).length;
+  if(starters!==11){$('#saveStatus').textContent=`⚠ ${starters} selected — need exactly 11`;return;}
+  const ratings={}; document.querySelectorAll('[data-rid]').forEach(i=>ratings[i.dataset.rid]=+i.value);
+  const players=checks.map(c=>({id:+c.dataset.id, starter:c.checked, rating:ratings[c.dataset.id]}));
+  const team=$('#lineupTeam').value;
+  $('#saveStatus').textContent='saving…';
+  const r=await fetch('/api/squad?team='+encodeURIComponent(team),
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({players})});
+  const d=await r.json();
+  $('#effElo').textContent=d.effectiveElo;
+  $('#saveStatus').textContent='✓ saved — effective Elo now '+d.effectiveElo;
+  init();  // refresh team Elo lists everywhere
+}
+init();
+</script>
+</body>
+</html>

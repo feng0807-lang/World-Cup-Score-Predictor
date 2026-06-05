@@ -1,0 +1,22 @@
+{
+  "elo": {
+    "Argentina": 2105,
+    "France": 2080,
+    "Brazil": 2055,
+    "Spain": 2050,
+    "England": 2035,
+    "Portugal": 2010,
+    "Netherlands": 2005,
+    "Morocco": 1900,
+    "Croatia": 1950,
+    "Japan": 1840,
+    "USA": 1825,
+    "Mexico": 1810
+  },
+  "groups": {
+    "A": ["Argentina", "Mexico", "USA", "Japan"],
+    "B": ["France", "Netherlands", "Croatia", "Morocco"],
+    "C": ["Brazil", "Portugal", "England", "Spain"],
+    "D": ["Spain", "Croatia", "Morocco", "Japan"]
+  }
+}
