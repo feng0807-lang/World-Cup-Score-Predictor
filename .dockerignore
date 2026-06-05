@@ -1,0 +1,15 @@
+.git
+__pycache__/
+*.pyc
+_backup/
+*.tmp
+data/
+results.csv
+# Keep the model OUT of the image too — supply it via env vars at runtime.
+model.key
+engine.enc
+params.enc
+engine_source.py
+train_model.py
+model_params.pkl
+manual_odds.json

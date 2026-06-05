@@ -78,12 +78,23 @@ JSON results, never the model or source). The model reaches the host through
    python make_deploy_env.py
    ```
    This prints `WORLDCUP_KEY`, `ENGINE_ENC_B64`, `PARAMS_ENC_B64`.
-2. On your host (Render / Railway / Fly.io / a VPS): deploy this GitHub repo,
-   set those three values as **secret env vars**, install `requirements.txt`,
-   and start with `python server.py` (it auto-binds `0.0.0.0:$PORT`; a
-   `Procfile` is included).
+2. Deploy on a free host. Two ready-made paths are included:
+
+   **Render (easiest — free):**
+   - Push this repo to GitHub, then on [render.com](https://render.com):
+     **New + → Blueprint → pick your repo** (it reads `render.yaml`).
+   - Render will prompt for the secret env vars — paste the three values from
+     step 1 (and optionally `ODDS_API_KEY`). Deploy.
+
+   **Fly.io / Railway / Docker anywhere:**
+   - A `Dockerfile` is included. `fly launch` (or your platform's "deploy from
+     Dockerfile"), then set the same env vars as secrets.
+
 3. Share the URL. Visitors predict and simulate in the browser; the model files
    never leave your machine/host and are never in the repo.
+
+> Free tiers sleep on inactivity, so the first hit after idle may take ~30s to
+> wake (heavy ML imports). Subsequent requests are fast.
 
 If the env vars (or local model files) are absent, the app runs but shows a
 "model not included" notice instead of predicting.

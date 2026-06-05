@@ -1,0 +1,24 @@
+# Render Blueprint — free hosting that connects straight to your GitHub repo.
+# In Render: New + → Blueprint → pick this repo. Then set the secret env vars
+# below (Render will prompt because they're marked sync:false). The model is
+# supplied via those secrets, so it never lives in the repo.
+services:
+  - type: web
+    name: worldcup-predictor
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # --- secrets: paste the output of `python make_deploy_env.py` ---
+      - key: WORLDCUP_KEY
+        sync: false
+      - key: ENGINE_ENC_B64
+        sync: false
+      - key: PARAMS_ENC_B64
+        sync: false
+      # --- optional: live bookmaker odds ---
+      - key: ODDS_API_KEY
+        sync: false
