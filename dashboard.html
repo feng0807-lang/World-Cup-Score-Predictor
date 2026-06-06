@@ -324,7 +324,7 @@ async function predict(){
     cb.classList.remove('hidden');
     cb.innerHTML=`🌡 <b>${d.climate.venue}</b>: ${a.venueTemp}°C`+
       `${w&&w.live?' (live)':' (typical)'} &nbsp;·&nbsp; `+
-      `acclimatized to — ${d.home} ~${a.homeOrigin}°C, ${d.away} ~${a.awayOrigin}°C `+
+      `squad-club acclimatization — ${d.home} ~${a.homeClubTemp}°C, ${d.away} ~${a.awayClubTemp}°C `+
       `&nbsp;·&nbsp; <span class="starter">${edge}</span>`;
   } else cb.classList.add('hidden');
   const max=Math.max(...d.scorelines.map(s=>s.p));

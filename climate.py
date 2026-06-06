@@ -41,20 +41,30 @@ VENUES: dict[str, tuple[float, float, float]] = {
     "Vancouver":          (49.28, -123.12, 22),
 }
 
-# Representative climate each team is acclimatized to (warm-season temp, C).
-ORIGIN_TEMP: dict[str, float] = {
-    "Argentina": 24, "Algeria": 33, "Australia": 28, "Austria": 24,
-    "Belgium": 22, "Bosnia and Herzegovina": 27, "Brazil": 30, "Canada": 23,
-    "Cape Verde": 27, "Colombia": 28, "Croatia": 28, "Curacao": 31,
-    "Czechia": 23, "DR Congo": 30, "Ecuador": 24, "Egypt": 35, "England": 21,
-    "France": 24, "Germany": 23, "Ghana": 31, "Haiti": 32, "Iran": 35,
-    "Iraq": 42, "Ivory Coast": 31, "Japan": 30, "Jordan": 35, "Mexico": 28,
-    "Morocco": 30, "Netherlands": 21, "New Zealand": 18, "Norway": 18,
-    "Panama": 32, "Paraguay": 28, "Portugal": 30, "Qatar": 41, "Saudi Arabia": 40,
-    "Scotland": 17, "Senegal": 31, "South Africa": 23, "South Korea": 29,
-    "Spain": 32, "Sweden": 21, "Switzerland": 24, "Tunisia": 33, "Turkey": 31,
-    "United States": 30, "Uruguay": 22, "Uzbekistan": 36,
+# Club-based acclimatization: the average climate of where a squad's players
+# actually play their club football (derived from each squad's club-country mix),
+# NOT their nationality. A Senegalese or Brazilian star at a European club is
+# acclimatized to temperate Europe (~20 C); only squads built on domestic/Gulf
+# leagues stay hot (Qatar, Saudi Arabia, Egypt, Iran, Iraq, Jordan...).
+CLUB_TEMP: dict[str, float] = {
+    # mostly Europe-based -> temperate
+    "England": 20, "Scotland": 19, "Germany": 20, "France": 21, "Spain": 24,
+    "Portugal": 22, "Netherlands": 20, "Belgium": 21, "Croatia": 22,
+    "Switzerland": 20, "Austria": 20, "Czechia": 20, "Norway": 19, "Sweden": 20,
+    "Bosnia and Herzegovina": 21, "Cape Verde": 21, "DR Congo": 21, "Ghana": 21,
+    "Senegal": 21, "Ivory Coast": 21, "Algeria": 22, "Morocco": 23, "Japan": 21,
+    "South Korea": 23, "Curacao": 20, "Canada": 21, "Australia": 23,
+    "New Zealand": 21, "Haiti": 22,
+    # South / Central America (Europe + regional leagues) -> mild-warm
+    "Brazil": 23, "Argentina": 22, "Uruguay": 23, "Colombia": 24, "Ecuador": 24,
+    "Paraguay": 25, "Panama": 26, "Mexico": 24, "United States": 22,
+    # domestic / Gulf-league heavy -> hot-acclimatized
+    "Qatar": 38, "Saudi Arabia": 38, "Egypt": 30, "Iran": 31, "Iraq": 33,
+    "Jordan": 34, "Uzbekistan": 28, "Tunisia": 25, "Turkey": 24,
+    "South Africa": 22,
 }
+# Backwards-compatible alias.
+ORIGIN_TEMP = CLUB_TEMP
 
 _weather_cache: dict[str, tuple[float, dict]] = {}
 
@@ -97,17 +107,17 @@ def _eff_temp(weather: dict) -> float:
 
 
 def climate_assessment(home: str, away: str, weather: dict) -> dict:
-    """Climate-mismatch edge for a match at given weather.
+    """Club-acclimatization edge for a match at given weather.
 
-    Returns each team's mismatch vs the conditions and the resulting Elo-point
-    deltas (the team closer to the match temperature is favoured).
+    Compares each team's squad-club climate to the match conditions; the team
+    whose players are acclimatized closer to the match temperature is favoured.
     """
     venue_temp = _eff_temp(weather)
-    oh = ORIGIN_TEMP.get(home)
-    oa = ORIGIN_TEMP.get(away)
+    oh = CLUB_TEMP.get(home)
+    oa = CLUB_TEMP.get(away)
     if oh is None or oa is None or venue_temp is None:
         return {"venueTemp": venue_temp, "deltaHome": 0.0, "deltaAway": 0.0,
-                "homeOrigin": oh, "awayOrigin": oa,
+                "homeClubTemp": oh, "awayClubTemp": oa,
                 "homeMismatch": None, "awayMismatch": None}
     mh = abs(venue_temp - oh)
     ma = abs(venue_temp - oa)
@@ -115,6 +125,6 @@ def climate_assessment(home: str, away: str, weather: dict) -> dict:
     dh = max(-WEATHER_CAP, min(WEATHER_CAP, WEATHER_ELO_PER_DEG * (ma - mh)))
     da = -dh
     return {"venueTemp": round(venue_temp, 1),
-            "homeOrigin": oh, "awayOrigin": oa,
+            "homeClubTemp": oh, "awayClubTemp": oa,
             "homeMismatch": round(mh, 1), "awayMismatch": round(ma, 1),
             "deltaHome": round(dh, 1), "deltaAway": round(da, 1)}
