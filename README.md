@@ -41,6 +41,13 @@ via `train_model.py`):
 On top of that, the **starting XI you pick** shifts each team's effective Elo,
 which nudges the predicted goals up or down.
 
+**Weather / acclimatization (2026-specific).** Pick a host **venue** in the Match
+Predictor and the app pulls **live weather** (Open-Meteo, no key) for it. Each
+team has an origin climate; the side whose acclimatization is closer to the
+match-day temperature gets a small, tunable edge — relevant given 2026 venues
+swing from cool (Vancouver/Seattle) to very hot (Monterrey/Dallas/Houston).
+See `climate.py`.
+
 For a tournament, expected goals for every pairing are precomputed once, then
 sampled thousands of times in a **Monte Carlo simulation** of the group stage
 + 32-team knockout bracket (`tournament.run_simulation`).

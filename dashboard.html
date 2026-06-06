@@ -85,6 +85,11 @@
         <select id="away"></select>
         <button onclick="predict()">Predict</button>
       </div>
+      <div class="row" style="font-size:13px;margin-top:8px">
+        <span class="muted">🌡 Venue:</span>
+        <select id="venue"><option value="">Neutral (no weather)</option></select>
+        <span id="venueWeather" class="muted"></span>
+      </div>
       <div id="matchResult" class="hidden" style="margin-top:18px">
         <div class="grid3">
           <div><div class="muted" id="hName"></div><div class="winp starter" id="hWin"></div></div>
@@ -95,6 +100,8 @@
           <div class="muted">Expected / most likely score</div>
           <div class="big"><span id="exp"></span> &nbsp;·&nbsp; <span id="ml" class="muted"></span></div>
         </div>
+        <div id="climateBox" class="hidden" style="margin:6px 0 14px;padding:10px 12px;
+             background:#10202a;border:1px solid var(--line);border-radius:8px;font-size:13px"></div>
         <table><thead><tr><th>Scoreline</th><th class="num">Probability</th><th></th></tr></thead>
           <tbody id="scoreBody"></tbody></table>
       </div>
@@ -252,6 +259,11 @@ async function init(){
   $('#home').innerHTML = opts; $('#away').innerHTML = opts;
   $('#lineupTeam').innerHTML = teams.map(t=>`<option>${t.team}</option>`).join('');
   $('#away').selectedIndex = 1;
+  try{
+    const vs=(await (await fetch('/api/venues')).json()).venues||[];
+    $('#venue').innerHTML='<option value="">Neutral (no weather)</option>'+
+      vs.map(v=>`<option>${v}</option>`).join('');
+  }catch(e){}
   loadSquad();
   try{
     const mi = await (await fetch('/api/modelinfo')).json();
@@ -274,9 +286,24 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   if(t.dataset.tab==='history') loadHistory();
 });
 
+$('#venue') && ($('#venue').onchange=showVenueWeather);
+async function showVenueWeather(){
+  const v=$('#venue').value;
+  if(!v){$('#venueWeather').textContent='';return;}
+  $('#venueWeather').textContent='fetching weather…';
+  try{
+    const w=await (await fetch('/api/weather?venue='+encodeURIComponent(v))).json();
+    const t=w.feelsLike??w.temp;
+    $('#venueWeather').textContent= w.available
+      ? `${t}°C${w.humidity!=null?' · '+w.humidity+'% hum':''}${w.live?' (live)':' (typical)'}`
+      : '';
+  }catch(e){$('#venueWeather').textContent='';}
+}
 async function predict(){
-  const h=$('#home').value, a=$('#away').value;
-  const r=await fetch(`/api/predict?home=${encodeURIComponent(h)}&away=${encodeURIComponent(a)}`);
+  const h=$('#home').value, a=$('#away').value, v=$('#venue').value;
+  let u=`/api/predict?home=${encodeURIComponent(h)}&away=${encodeURIComponent(a)}`;
+  if(v) u+=`&venue=${encodeURIComponent(v)}`;
+  const r=await fetch(u);
   const d=await r.json();
   if(d.error==='model_unavailable'){alert('The prediction model isn\'t included in this build.');return;}
   if(d.error){alert(d.error);return;}
@@ -288,6 +315,18 @@ async function predict(){
   $('#aWin').textContent=(d.pAway*100).toFixed(1)+'%';
   $('#exp').textContent=`${d.expected[0]} - ${d.expected[1]}`;
   $('#ml').textContent=`most likely ${d.mostLikely[0]}-${d.mostLikely[1]}`;
+  const cb=$('#climateBox');
+  if(d.climate && d.climate.assessment && d.climate.assessment.venueTemp!=null){
+    const w=d.climate.weather, a=d.climate.assessment;
+    const edge = a.deltaHome>0.5 ? `${d.home} better suited (+${a.deltaHome} Elo)`
+               : a.deltaHome<-0.5 ? `${d.away} better suited (+${a.deltaAway} Elo)`
+               : 'both teams similarly suited';
+    cb.classList.remove('hidden');
+    cb.innerHTML=`🌡 <b>${d.climate.venue}</b>: ${a.venueTemp}°C`+
+      `${w&&w.live?' (live)':' (typical)'} &nbsp;·&nbsp; `+
+      `acclimatized to — ${d.home} ~${a.homeOrigin}°C, ${d.away} ~${a.awayOrigin}°C `+
+      `&nbsp;·&nbsp; <span class="starter">${edge}</span>`;
+  } else cb.classList.add('hidden');
   const max=Math.max(...d.scorelines.map(s=>s.p));
   $('#scoreBody').innerHTML=d.scorelines.map(s=>
     `<tr><td>${s.score}</td><td class="num">${(s.p*100).toFixed(1)}%</td>

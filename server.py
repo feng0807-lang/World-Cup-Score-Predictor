@@ -24,6 +24,7 @@ import squads as squads_mod
 import secure
 import odds as odds_mod
 import history as history_mod
+import climate as climate_mod
 from model import predict_match
 from tournament import run_simulation
 
@@ -144,6 +145,12 @@ class Handler(BaseHTTPRequestHandler):
                 and not secure.available():
             return self._send({"error": "model_unavailable", "modelAvailable": False}, 503)
 
+        if path == "/api/venues":
+            return self._send({"venues": climate_mod.list_venues()})
+
+        if path == "/api/weather":
+            return self._send(climate_mod.live_weather(q.get("venue", [""])[0]))
+
         if path == "/api/teams":
             elos = squads_mod.effective_elo_map(SQUADS)
             data = sorted(({"team": t, "elo": e} for t, e in elos.items()),
@@ -154,7 +161,16 @@ class Handler(BaseHTTPRequestHandler):
             home, away = q.get("home", [""])[0], q.get("away", [""])[0]
             if not home or not away:
                 return self._send({"error": "home and away required"}, 400)
-            p = predict_match(home, away, _lineup_delta(home), _lineup_delta(away))
+            dh, da = _lineup_delta(home), _lineup_delta(away)
+            climate_info = None
+            venue = q.get("venue", [""])[0]
+            if venue:
+                weather = climate_mod.live_weather(venue)
+                assess = climate_mod.climate_assessment(home, away, weather)
+                dh += assess["deltaHome"]
+                da += assess["deltaAway"]
+                climate_info = {"venue": venue, "weather": weather, "assessment": assess}
+            p = predict_match(home, away, dh, da)
             return self._send({
                 "home": home, "away": away,
                 "eloHome": _elo_for(home), "eloAway": _elo_for(away),
@@ -163,6 +179,7 @@ class Handler(BaseHTTPRequestHandler):
                 "pHome": p.p_home_win, "pDraw": p.p_draw, "pAway": p.p_away_win,
                 "scorelines": [{"score": f"{i}-{j}", "p": pr}
                                for (i, j), pr in p.top_scorelines(8)],
+                "climate": climate_info,
             })
 
         if path == "/api/simulate":
