@@ -8,6 +8,7 @@ odds_api.key
 # is supplied locally.
 engine_source.py
 train_model.py
+backtest.py
 model_params.pkl
 engine.enc
 params.enc
