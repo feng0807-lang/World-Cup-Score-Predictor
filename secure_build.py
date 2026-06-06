@@ -55,11 +55,16 @@ def main():
         fh.write(f_engine)
     print(f"Encrypted {ENGINE_SRC} -> {ENGINE_ENC} ({len(f_engine)} bytes)")
 
-    with open(PARAMS_SRC, "rb") as fh:
-        f_params = f.encrypt(fh.read())
-    with open(PARAMS_ENC, "wb") as fh:
-        fh.write(f_params)
-    print(f"Encrypted {PARAMS_SRC} -> {PARAMS_ENC} ({len(f_params)} bytes)")
+    # --engine-only re-encrypts just the engine, leaving params.enc byte-for-byte
+    # unchanged (so the large hosting env-var chunks don't need re-pasting).
+    if "--engine-only" in sys.argv:
+        print("Engine-only: left params.enc unchanged.")
+    else:
+        with open(PARAMS_SRC, "rb") as fh:
+            f_params = f.encrypt(fh.read())
+        with open(PARAMS_ENC, "wb") as fh:
+            fh.write(f_params)
+        print(f"Encrypted {PARAMS_SRC} -> {PARAMS_ENC} ({len(f_params)} bytes)")
 
     if "--purge" in sys.argv:
         for p in (ENGINE_SRC, PARAMS_SRC):
