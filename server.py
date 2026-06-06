@@ -25,6 +25,7 @@ import secure
 import odds as odds_mod
 import history as history_mod
 import climate as climate_mod
+import live as live_mod
 from model import predict_match
 from tournament import run_simulation
 
@@ -45,8 +46,13 @@ def _lineup_delta(team: str) -> float:
     return 0.0
 
 
+def _strength_delta(team: str) -> float:
+    """Combined non-weather strength shift: lineup + live tournament form."""
+    return _lineup_delta(team) + live_mod.get_delta(team)
+
+
 def _all_deltas() -> dict[str, float]:
-    return {t: _lineup_delta(t) for t in SQUADS}
+    return {t: _strength_delta(t) for t in SQUADS}
 
 
 def _odds_payload(home: str, away: str, blend: float | None):
@@ -161,16 +167,28 @@ class Handler(BaseHTTPRequestHandler):
             home, away = q.get("home", [""])[0], q.get("away", [""])[0]
             if not home or not away:
                 return self._send({"error": "home and away required"}, 400)
-            dh, da = _lineup_delta(home), _lineup_delta(away)
+            lin_h, lin_a = _lineup_delta(home), _lineup_delta(away)
+            live_h, live_a = live_mod.get_delta(home), live_mod.get_delta(away)
+            wx_h = wx_a = 0.0
             climate_info = None
             venue = q.get("venue", [""])[0]
             if venue:
                 weather = climate_mod.live_weather(venue)
                 assess = climate_mod.climate_assessment(home, away, weather)
-                dh += assess["deltaHome"]
-                da += assess["deltaAway"]
+                wx_h, wx_a = assess["deltaHome"], assess["deltaAway"]
                 climate_info = {"venue": venue, "weather": weather, "assessment": assess}
+            dh = lin_h + live_h + wx_h
+            da = lin_a + live_a + wx_a
             p = predict_match(home, away, dh, da)
+            base_h, base_a = secure.trained_elo(home), secure.trained_elo(away)
+            breakdown = {
+                "home": {"base": round(base_h, 1), "lineup": round(lin_h, 1),
+                         "liveForm": round(live_h, 1), "weather": round(wx_h, 1),
+                         "effective": round(base_h + dh, 1)},
+                "away": {"base": round(base_a, 1), "lineup": round(lin_a, 1),
+                         "liveForm": round(live_a, 1), "weather": round(wx_a, 1),
+                         "effective": round(base_a + da, 1)},
+            }
             return self._send({
                 "home": home, "away": away,
                 "eloHome": _elo_for(home), "eloAway": _elo_for(away),
@@ -179,7 +197,7 @@ class Handler(BaseHTTPRequestHandler):
                 "pHome": p.p_home_win, "pDraw": p.p_draw, "pAway": p.p_away_win,
                 "scorelines": [{"score": f"{i}-{j}", "p": pr}
                                for (i, j), pr in p.top_scorelines(8)],
-                "climate": climate_info,
+                "climate": climate_info, "ratings": breakdown,
             })
 
         if path == "/api/simulate":
@@ -190,6 +208,9 @@ class Handler(BaseHTTPRequestHandler):
             date = q.get("date", [None])[0]
             kind = q.get("type", [None])[0]
             return self._send({"entries": history_mod.read_history(date, kind)})
+
+        if path == "/api/liveratings":
+            return self._send({"ratings": live_mod.table()})
 
         if path == "/api/sims":
             return self._send({"simulations": history_mod.list_simulations()})
@@ -254,6 +275,23 @@ class Handler(BaseHTTPRequestHandler):
         if url.path in ("/api/odds", "/api/outrights", "/api/savesim", "/api/recalc") \
                 and not secure.available():
             return self._send({"error": "model_unavailable", "modelAvailable": False}, 503)
+
+        if url.path == "/api/result":
+            try:
+                home, away = body["home"], body["away"]
+                gh, ga = int(body["homeGoals"]), int(body["awayGoals"])
+            except (KeyError, ValueError, TypeError):
+                return self._send({"error": "home/away/homeGoals/awayGoals required"}, 400)
+            if not secure.available():
+                return self._send({"error": "model_unavailable"}, 503)
+            res = live_mod.update_result(home, away, gh, ga, bool(body.get("neutral", True)))
+            history_mod.log_input("result", {"home": home, "away": away,
+                                  "score": f"{gh}-{ga}", "change": res["change"]})
+            return self._send(res)
+
+        if url.path == "/api/resetratings":
+            live_mod.reset()
+            return self._send({"reset": True})
 
         if url.path == "/api/savesim":
             runs = int(body.get("runs", 5000))

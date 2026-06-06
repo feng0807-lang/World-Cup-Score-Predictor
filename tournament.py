@@ -34,7 +34,7 @@ def _build_cache(groups, deltas):
     """Precompute expected goals for every team pairing once (the engine /
     gradient-boosting call is far too slow to run inside the Monte Carlo loop)."""
     all_teams = [t for teams in groups.values() for t in teams]
-    cache = {}
+    cache = {"_deltas": deltas}
     for a in all_teams:
         for b in all_teams:
             if a != b and (a, b) not in cache:
@@ -86,7 +86,9 @@ def simulate_once(groups, cache, rng):
     best_thirds = [t for t, _ in thirds[:8]]
 
     qualifiers = winners + runners + best_thirds
-    seeded = sorted(qualifiers, key=lambda t: secure.trained_elo(t), reverse=True)
+    seeded = sorted(qualifiers,
+                    key=lambda t: secure.trained_elo(t) + cache["_deltas"].get(t, 0.0),
+                    reverse=True)
     pairs = [(seeded[i], seeded[31 - i]) for i in range(16)]
 
     reached = {"round32": list(qualifiers)}

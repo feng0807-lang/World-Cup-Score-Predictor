@@ -100,6 +100,8 @@
           <div class="muted">Expected / most likely score</div>
           <div class="big"><span id="exp"></span> &nbsp;·&nbsp; <span id="ml" class="muted"></span></div>
         </div>
+        <div id="ratingBox" class="hidden" style="margin:6px 0 8px;padding:10px 12px;
+             background:#161b22;border:1px solid var(--line);border-radius:8px;font-size:12px"></div>
         <div id="climateBox" class="hidden" style="margin:6px 0 14px;padding:10px 12px;
              background:#10202a;border:1px solid var(--line);border-radius:8px;font-size:13px"></div>
         <table><thead><tr><th>Scoreline</th><th class="num">Probability</th><th></th></tr></thead>
@@ -192,6 +194,26 @@
   <!-- HISTORY -->
   <section id="tab-history" class="hidden">
     <div class="card">
+      <h2>Live tournament ratings</h2>
+      <p class="note">Enter a finished match result; team ratings update (online Elo)
+        and feed into all later predictions &amp; simulations.</p>
+      <div class="row" style="font-size:13px">
+        <select id="resHome"></select>
+        <input id="resHG" type="number" min="0" style="width:52px" placeholder="0">
+        <span class="muted">-</span>
+        <input id="resAG" type="number" min="0" style="width:52px" placeholder="0">
+        <select id="resAway"></select>
+        <label style="font-size:12px"><input type="checkbox" id="resNeutral" checked> neutral</label>
+        <button onclick="recordResult()">Record result</button>
+        <button class="ghost" onclick="resetRatings()">Reset all</button>
+        <span id="resStatus" class="spin"></span>
+      </div>
+      <table style="margin-top:10px">
+        <thead><tr><th>Team</th><th class="num">Form Δ (Elo)</th><th class="num">Effective Elo</th></tr></thead>
+        <tbody id="liveBody"></tbody>
+      </table>
+    </div>
+    <div class="card">
       <h2>Saved simulations — reload &amp; backtrack</h2>
       <p class="note">Every run you save is stored in the <code>data/simulations/</code>
         folder with the exact lineup state used. "Recalc" re-runs the simulation from
@@ -258,6 +280,8 @@ async function init(){
   const opts = teams.map(t=>`<option value="${t.team}">${t.team} (${t.elo})</option>`).join('');
   $('#home').innerHTML = opts; $('#away').innerHTML = opts;
   $('#lineupTeam').innerHTML = teams.map(t=>`<option>${t.team}</option>`).join('');
+  const topts=teams.map(t=>`<option>${t.team}</option>`).join('');
+  if($('#resHome')){ $('#resHome').innerHTML=topts; $('#resAway').innerHTML=topts; $('#resAway').selectedIndex=1; }
   $('#away').selectedIndex = 1;
   try{
     const vs=(await (await fetch('/api/venues')).json()).venues||[];
@@ -283,7 +307,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   t.classList.add('active');
   ['match','tourney','lineup','history'].forEach(name=>
     $('#tab-'+name).classList.toggle('hidden', name!==t.dataset.tab));
-  if(t.dataset.tab==='history') loadHistory();
+  if(t.dataset.tab==='history'){ loadHistory(); loadLiveRatings(); }
 });
 
 $('#venue') && ($('#venue').onchange=showVenueWeather);
@@ -315,6 +339,19 @@ async function predict(){
   $('#aWin').textContent=(d.pAway*100).toFixed(1)+'%';
   $('#exp').textContent=`${d.expected[0]} - ${d.expected[1]}`;
   $('#ml').textContent=`most likely ${d.mostLikely[0]}-${d.mostLikely[1]}`;
+  const rb=$('#ratingBox');
+  if(d.ratings){
+    const fmt=(o,name)=>{
+      const parts=[];
+      if(o.lineup) parts.push(`lineup ${o.lineup>0?'+':''}${o.lineup}`);
+      if(o.liveForm) parts.push(`form ${o.liveForm>0?'+':''}${o.liveForm}`);
+      if(o.weather) parts.push(`weather ${o.weather>0?'+':''}${o.weather}`);
+      const adj=parts.length?` (${parts.join(', ')})`:'';
+      return `${name}: base ${o.base} → <b>${o.effective}</b>${adj}`;
+    };
+    rb.classList.remove('hidden');
+    rb.innerHTML='⚙ Rating mix &nbsp; '+fmt(d.ratings.home,d.home)+' &nbsp;·&nbsp; '+fmt(d.ratings.away,d.away);
+  } else rb.classList.add('hidden');
   const cb=$('#climateBox');
   if(d.climate && d.climate.assessment && d.climate.assessment.venueTemp!=null){
     const w=d.climate.weather, a=d.climate.assessment;
@@ -413,6 +450,33 @@ async function simulate(){
        <span class="bar" style="width:${(x.champion/max*60).toFixed(0)}px"></span></td></tr>`).join('');
 }
 
+async function loadLiveRatings(){
+  const d=await (await fetch('/api/liveratings')).json();
+  const rows=d.ratings||[];
+  $('#liveBody').innerHTML = rows.length ? rows.map(r=>
+    `<tr><td>${r.team}</td>
+      <td class="num" style="color:${r.delta>0?'var(--acc)':r.delta<0?'#f85149':'inherit'}">
+        ${r.delta>0?'+':''}${r.delta}</td>
+      <td class="num">${r.elo}</td></tr>`).join('')
+    : '<tr><td colspan="3" class="muted">No results recorded yet.</td></tr>';
+}
+async function recordResult(){
+  const body={home:$('#resHome').value, away:$('#resAway').value,
+    homeGoals:+$('#resHG').value, awayGoals:+$('#resAG').value,
+    neutral:$('#resNeutral').checked};
+  if(body.home===body.away){$('#resStatus').textContent='pick two different teams';return;}
+  $('#resStatus').textContent='updating…';
+  const d=await (await fetch('/api/result',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)})).json();
+  if(d.error){$('#resStatus').textContent=d.error;return;}
+  $('#resStatus').textContent=`✓ ${d.home} ${d.score} ${d.away} · Δ ${d.change>0?'+':''}${d.change}`;
+  loadLiveRatings();
+}
+async function resetRatings(){
+  if(!confirm('Clear all live tournament rating changes?'))return;
+  await fetch('/api/resetratings',{method:'POST'});
+  $('#resStatus').textContent='reset'; loadLiveRatings();
+}
 async function saveSim(){
   $('#simStatus').textContent='saving run…';
   const body={label:$('#simLabel').value.trim(), runs:+$('#runs').value};

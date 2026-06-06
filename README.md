@@ -54,6 +54,30 @@ For a tournament, expected goals for every pairing are precomputed once, then
 sampled thousands of times in a **Monte Carlo simulation** of the group stage
 + 32-team knockout bracket (`tournament.run_simulation`).
 
+## How ratings work (the "mix")
+
+A prediction combines several rating signals, all expressed on the Elo scale:
+
+```
+effective rating = trained base Elo
+                 + lineup delta   (your starting XI vs the squad default)
+                 + live form delta (online Elo updates from tournament results)
+                 + weather delta   (squad-club acclimatization vs match weather)
+```
+
+- **Trained base** — from the model, fit on 49k historical matches.
+- **Lineup delta** — picking a stronger/weaker XI in the Starting-XI editor; the
+  *neutral* reference is each squad's default-XI average rating (delta 0).
+- **Live form delta** — enter a finished result in **History → Live tournament
+  ratings** and both teams' ratings update (online Elo, bigger wins move more);
+  later predictions and simulations use the new values. Persisted to
+  `data/live_ratings.json`; reset any time.
+- **Weather delta** — see above.
+
+The Match Predictor shows a **rating-mix breakdown** so every adjustment is
+visible. Player ratings are squad-relative and editable; they influence
+predictions only through the lineup delta.
+
 ## The model is encrypted
 
 The algorithm (`engine_source.py`) and the trained parameters
