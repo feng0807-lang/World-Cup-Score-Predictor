@@ -69,7 +69,6 @@
 
 <div class="tabs">
   <div class="tab active" data-tab="match">Match Predictor</div>
-  <div class="tab" data-tab="fixtures">Fixtures</div>
   <div class="tab" data-tab="tourney">Tournament Table</div>
   <div class="tab" data-tab="lineup">Starting XI Editor</div>
   <div class="tab" data-tab="history">History &amp; Backtrack</div>
@@ -80,11 +79,19 @@
   <section id="tab-match">
     <div class="card">
       <h2>Predict a match</h2>
+      <div class="row" style="font-size:13px;margin-bottom:8px">
+        <span class="muted">📅 Scheduled match:</span>
+        <select id="fxGroup" onchange="fillFixtureSelect()"><option value="">— group —</option></select>
+        <select id="fxMatch" onchange="loadFixtureMatch()" style="min-width:230px">
+          <option value="">— pick a fixture —</option></select>
+        <span id="fxStatus" class="spin"></span>
+      </div>
       <div class="row">
         <select id="home"></select>
         <span class="muted">vs</span>
         <select id="away"></select>
         <button onclick="predict()">Predict</button>
+        <span class="muted" style="font-size:12px">or choose teams manually</span>
       </div>
       <div class="row" style="font-size:13px;margin-top:8px">
         <span class="muted">🌡 Venue:</span>
@@ -145,26 +152,6 @@
         <div id="blendRow" class="hidden" style="margin-top:10px"></div>
       </div>
       <div id="oddsMsg" class="note hidden"></div>
-    </div>
-  </section>
-
-  <!-- FIXTURES -->
-  <section id="tab-fixtures" class="hidden">
-    <div class="card">
-      <h2>Group-stage fixtures &amp; stadiums</h2>
-      <p class="note">All 72 group matches with their host stadium. Click a match to
-        predict it with that venue's live weather applied.</p>
-      <div class="row" style="font-size:13px">
-        <label>Group
-          <select id="fxGroup" onchange="renderFixtures()">
-            <option value="">all</option>
-          </select></label>
-        <span id="fxStatus" class="spin"></span>
-      </div>
-      <table style="margin-top:10px">
-        <thead><tr><th>Grp</th><th>Date</th><th>Match</th><th>Stadium</th><th></th></tr></thead>
-        <tbody id="fxBody"></tbody>
-      </table>
     </div>
   </section>
 
@@ -309,6 +296,7 @@ async function init(){
     $('#venue').innerHTML='<option value="">Neutral (no weather)</option>'+
       vs.map(v=>`<option>${v}</option>`).join('');
   }catch(e){}
+  loadFixtures();
   loadSquad();
   try{
     const mi = await (await fetch('/api/modelinfo')).json();
@@ -326,10 +314,9 @@ async function init(){
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   t.classList.add('active');
-  ['match','fixtures','tourney','lineup','history'].forEach(name=>
+  ['match','tourney','lineup','history'].forEach(name=>
     $('#tab-'+name).classList.toggle('hidden', name!==t.dataset.tab));
   if(t.dataset.tab==='history'){ loadHistory(); loadLiveRatings(); }
-  if(t.dataset.tab==='fixtures') loadFixtures();
 });
 
 $('#venue') && ($('#venue').onchange=showVenueWeather);
@@ -476,32 +463,20 @@ async function simulate(){
 
 let _fixtures=[];
 async function loadFixtures(){
-  if(_fixtures.length===0){
-    $('#fxStatus').textContent='loading…';
-    _fixtures=(await (await fetch('/api/fixtures')).json()).fixtures||[];
-    const groups=[...new Set(_fixtures.map(f=>f.group))];
-    $('#fxGroup').innerHTML='<option value="">all</option>'+groups.map(g=>`<option>${g}</option>`).join('');
-    $('#fxStatus').textContent='';
-  }
-  renderFixtures();
+  try{ _fixtures=(await (await fetch('/api/fixtures')).json()).fixtures||[]; }catch(e){ return; }
+  const groups=[...new Set(_fixtures.map(f=>f.group))];
+  $('#fxGroup').innerHTML='<option value="">— group —</option>'+groups.map(g=>`<option>Group ${g}</option>`).join('');
 }
-function renderFixtures(){
-  const g=$('#fxGroup').value;
-  const rows=_fixtures.filter(f=>!g||f.group===g);
-  $('#fxBody').innerHTML=rows.map((f,i)=>
-    `<tr><td><span class="pill">${f.group}</span></td><td class="muted">${f.date}</td>
-      <td><b>${f.home}</b> vs <b>${f.away}</b></td>
-      <td class="muted">${f.stadium}</td>
-      <td><button class="ghost" onclick="predictFixture(${_fixtures.indexOf(f)})">Predict →</button></td></tr>`).join('');
+function fillFixtureSelect(){
+  const g=$('#fxGroup').value.replace('Group ','');
+  const rows=_fixtures.filter(f=>f.group===g);
+  $('#fxMatch').innerHTML='<option value="">— pick a fixture —</option>'+
+    rows.map(f=>`<option value="${_fixtures.indexOf(f)}">${f.date} · ${f.home} vs ${f.away} · ${f.stadium}</option>`).join('');
 }
-function predictFixture(idx){
-  const f=_fixtures[idx]; if(!f) return;
+function loadFixtureMatch(){
+  const idx=$('#fxMatch').value; if(idx==='') return;
+  const f=_fixtures[+idx]; if(!f) return;
   $('#home').value=f.home; $('#away').value=f.away; $('#venue').value=f.venue;
-  // switch to Match tab
-  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
-  document.querySelector('.tab[data-tab="match"]').classList.add('active');
-  ['match','fixtures','tourney','lineup','history'].forEach(name=>
-    $('#tab-'+name).classList.toggle('hidden', name!=='match'));
   showVenueWeather(); predict();
 }
 async function loadLiveRatings(){
