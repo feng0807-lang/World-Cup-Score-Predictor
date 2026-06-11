@@ -54,6 +54,12 @@ For a tournament, expected goals for every pairing are precomputed once, then
 sampled thousands of times in a **Monte Carlo simulation** of the group stage
 + 32-team knockout bracket (`tournament.run_simulation`).
 
+## Fixtures
+
+The **Fixtures** tab lists all **72 group-stage matches** with date and host
+**stadium** (`fixtures.py`). Click any match to predict it in the Match
+Predictor with that venue's **live weather** already applied.
+
 ## How ratings work (the "mix")
 
 A prediction combines several rating signals, all expressed on the Elo scale:

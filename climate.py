@@ -66,6 +66,26 @@ CLUB_TEMP: dict[str, float] = {
 # Backwards-compatible alias.
 ORIGIN_TEMP = CLUB_TEMP
 
+# Real stadium name per host venue (FIFA uses generic names during the event).
+STADIUM: dict[str, str] = {
+    "Atlanta": "Mercedes-Benz Stadium",
+    "Boston (Foxborough)": "Gillette Stadium",
+    "Dallas (Arlington)": "AT&T Stadium",
+    "Houston": "NRG Stadium",
+    "Kansas City": "Arrowhead Stadium",
+    "Los Angeles": "SoFi Stadium",
+    "Miami": "Hard Rock Stadium",
+    "New York/New Jersey": "MetLife Stadium",
+    "Philadelphia": "Lincoln Financial Field",
+    "San Francisco Bay": "Levi's Stadium",
+    "Seattle": "Lumen Field",
+    "Guadalajara": "Estadio Akron",
+    "Mexico City": "Estadio Azteca",
+    "Monterrey": "Estadio BBVA",
+    "Toronto": "BMO Field",
+    "Vancouver": "BC Place",
+}
+
 _weather_cache: dict[str, tuple[float, dict]] = {}
 
 
@@ -88,15 +108,16 @@ def live_weather(venue: str) -> dict:
         with urllib.request.urlopen(req, timeout=12) as r:
             data = json.loads(r.read().decode("utf-8"))
         cur = data.get("current", {})
-        out = {"available": True, "venue": venue,
+        out = {"available": True, "venue": venue, "stadium": STADIUM.get(venue),
                "temp": cur.get("temperature_2m"),
                "feelsLike": cur.get("apparent_temperature"),
                "humidity": cur.get("relative_humidity_2m"),
                "typical": typical, "live": True}
     except Exception as e:
-        out = {"available": True, "venue": venue, "temp": typical,
-               "feelsLike": typical, "humidity": None, "typical": typical,
-               "live": False, "note": f"live fetch failed ({e}); using typical"}
+        out = {"available": True, "venue": venue, "stadium": STADIUM.get(venue),
+               "temp": typical, "feelsLike": typical, "humidity": None,
+               "typical": typical, "live": False,
+               "note": f"live fetch failed ({e}); using typical"}
     _weather_cache[venue] = (now, out)
     return out
 

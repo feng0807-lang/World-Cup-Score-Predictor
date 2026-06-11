@@ -69,6 +69,7 @@
 
 <div class="tabs">
   <div class="tab active" data-tab="match">Match Predictor</div>
+  <div class="tab" data-tab="fixtures">Fixtures</div>
   <div class="tab" data-tab="tourney">Tournament Table</div>
   <div class="tab" data-tab="lineup">Starting XI Editor</div>
   <div class="tab" data-tab="history">History &amp; Backtrack</div>
@@ -144,6 +145,26 @@
         <div id="blendRow" class="hidden" style="margin-top:10px"></div>
       </div>
       <div id="oddsMsg" class="note hidden"></div>
+    </div>
+  </section>
+
+  <!-- FIXTURES -->
+  <section id="tab-fixtures" class="hidden">
+    <div class="card">
+      <h2>Group-stage fixtures &amp; stadiums</h2>
+      <p class="note">All 72 group matches with their host stadium. Click a match to
+        predict it with that venue's live weather applied.</p>
+      <div class="row" style="font-size:13px">
+        <label>Group
+          <select id="fxGroup" onchange="renderFixtures()">
+            <option value="">all</option>
+          </select></label>
+        <span id="fxStatus" class="spin"></span>
+      </div>
+      <table style="margin-top:10px">
+        <thead><tr><th>Grp</th><th>Date</th><th>Match</th><th>Stadium</th><th></th></tr></thead>
+        <tbody id="fxBody"></tbody>
+      </table>
     </div>
   </section>
 
@@ -305,9 +326,10 @@ async function init(){
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   t.classList.add('active');
-  ['match','tourney','lineup','history'].forEach(name=>
+  ['match','fixtures','tourney','lineup','history'].forEach(name=>
     $('#tab-'+name).classList.toggle('hidden', name!==t.dataset.tab));
   if(t.dataset.tab==='history'){ loadHistory(); loadLiveRatings(); }
+  if(t.dataset.tab==='fixtures') loadFixtures();
 });
 
 $('#venue') && ($('#venue').onchange=showVenueWeather);
@@ -332,7 +354,9 @@ async function predict(){
   if(d.error==='model_unavailable'){alert('The prediction model isn\'t included in this build.');return;}
   if(d.error){alert(d.error);return;}
   $('#matchResult').classList.remove('hidden');
+  // reset all dependent panels so each prediction starts fresh
   $('#oddsResult').classList.add('hidden'); $('#oddsMsg').classList.add('hidden');
+  $('#ratingBox').classList.add('hidden'); $('#climateBox').classList.add('hidden');
   $('#hName').textContent=`${d.home} win`; $('#aName').textContent=`${d.away} win`;
   $('#hWin').textContent=(d.pHome*100).toFixed(1)+'%';
   $('#dWin').textContent=(d.pDraw*100).toFixed(1)+'%';
@@ -450,6 +474,36 @@ async function simulate(){
        <span class="bar" style="width:${(x.champion/max*60).toFixed(0)}px"></span></td></tr>`).join('');
 }
 
+let _fixtures=[];
+async function loadFixtures(){
+  if(_fixtures.length===0){
+    $('#fxStatus').textContent='loading…';
+    _fixtures=(await (await fetch('/api/fixtures')).json()).fixtures||[];
+    const groups=[...new Set(_fixtures.map(f=>f.group))];
+    $('#fxGroup').innerHTML='<option value="">all</option>'+groups.map(g=>`<option>${g}</option>`).join('');
+    $('#fxStatus').textContent='';
+  }
+  renderFixtures();
+}
+function renderFixtures(){
+  const g=$('#fxGroup').value;
+  const rows=_fixtures.filter(f=>!g||f.group===g);
+  $('#fxBody').innerHTML=rows.map((f,i)=>
+    `<tr><td><span class="pill">${f.group}</span></td><td class="muted">${f.date}</td>
+      <td><b>${f.home}</b> vs <b>${f.away}</b></td>
+      <td class="muted">${f.stadium}</td>
+      <td><button class="ghost" onclick="predictFixture(${_fixtures.indexOf(f)})">Predict →</button></td></tr>`).join('');
+}
+function predictFixture(idx){
+  const f=_fixtures[idx]; if(!f) return;
+  $('#home').value=f.home; $('#away').value=f.away; $('#venue').value=f.venue;
+  // switch to Match tab
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelector('.tab[data-tab="match"]').classList.add('active');
+  ['match','fixtures','tourney','lineup','history'].forEach(name=>
+    $('#tab-'+name).classList.toggle('hidden', name!=='match'));
+  showVenueWeather(); predict();
+}
 async function loadLiveRatings(){
   const d=await (await fetch('/api/liveratings')).json();
   const rows=d.ratings||[];

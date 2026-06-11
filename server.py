@@ -26,6 +26,7 @@ import odds as odds_mod
 import history as history_mod
 import climate as climate_mod
 import live as live_mod
+import fixtures as fixtures_mod
 from model import predict_match
 from tournament import run_simulation
 
@@ -153,6 +154,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/venues":
             return self._send({"venues": climate_mod.list_venues()})
+
+        if path == "/api/fixtures":
+            return self._send({"fixtures": fixtures_mod.all_fixtures()})
 
         if path == "/api/weather":
             return self._send(climate_mod.live_weather(q.get("venue", [""])[0]))
