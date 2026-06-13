@@ -314,7 +314,7 @@
         <button class="ghost" onclick="saveCoach()">Save coach</button>
         <span id="coachStatus" class="muted"></span>
       </div>
-      <table><thead><tr><th>Start</th><th class="num">#</th><th>Player</th><th>Pos</th><th class="num">Rating</th></tr></thead>
+      <table><thead><tr><th>Start</th><th class="num">#</th><th>Player</th><th>Pos</th><th class="num">Rating</th><th>Avail</th></tr></thead>
         <tbody id="squadBody"></tbody></table>
     </div>
   </section>
@@ -732,18 +732,32 @@ async function saveCoach(){
   $('#coachStatus').textContent='✓ saved';
 }
 function renderSquad(){
-  $('#squadBody').innerHTML=currentSquad.map(p=>
-    `<tr><td><input type="checkbox" data-id="${p.id}" ${p.starter?'checked':''}></td>
+  $('#squadBody').innerHTML=currentSquad.map(p=>{
+    const out=p.available===false;
+    return `<tr style="${out?'opacity:0.5':''}">
+      <td><input type="checkbox" data-id="${p.id}" ${p.starter&&!out?'checked':''} ${out?'disabled':''}></td>
       <td class="num muted">${p.number??''}</td>
-      <td>${p.name}</td><td><span class="pill">${p.pos}</span></td>
-      <td class="num"><input type="number" data-rid="${p.id}" value="${p.rating}" min="1" max="99"></td></tr>`).join('');
+      <td>${p.name} ${out?'<span style="color:#f85149;font-size:11px">⛔ OUT</span>':''}</td>
+      <td><span class="pill">${p.pos}</span></td>
+      <td class="num"><input type="number" data-rid="${p.id}" value="${p.rating}" min="1" max="99"></td>
+      <td><label style="font-size:11px"><input type="checkbox" data-avail="${p.id}" ${out?'':'checked'} onchange="renderSquadToggle(${p.id},this.checked)"> fit</label></td></tr>`;
+  }).join('');
+}
+function syncSquadDOM(){
+  document.querySelectorAll('[data-id]').forEach(c=>{const p=currentSquad.find(x=>x.id==c.dataset.id); if(p&&!c.disabled) p.starter=c.checked;});
+  document.querySelectorAll('[data-rid]').forEach(i=>{const p=currentSquad.find(x=>x.id==i.dataset.rid); if(p) p.rating=+i.value;});
+}
+function renderSquadToggle(id,fit){
+  syncSquadDOM();
+  const p=currentSquad.find(x=>x.id===id); if(p){ p.available=fit; if(!fit) p.starter=false; }
+  renderSquad();
 }
 async function saveSquad(){
-  const checks=[...document.querySelectorAll('[data-id]')];
-  const starters=checks.filter(c=>c.checked).length;
-  if(starters!==11){$('#saveStatus').textContent=`⚠ ${starters} selected — need exactly 11`;return;}
-  const ratings={}; document.querySelectorAll('[data-rid]').forEach(i=>ratings[i.dataset.rid]=+i.value);
-  const players=checks.map(c=>({id:+c.dataset.id, starter:c.checked, rating:ratings[c.dataset.id]}));
+  syncSquadDOM();
+  const starters=currentSquad.filter(p=>p.starter&&p.available!==false).length;
+  if(starters!==11){$('#saveStatus').textContent=`⚠ ${starters} fit starters — need exactly 11`;return;}
+  const players=currentSquad.map(p=>({id:p.id, starter:!!p.starter&&p.available!==false,
+    rating:p.rating, available:p.available!==false}));
   const team=$('#lineupTeam').value;
   $('#saveStatus').textContent='saving…';
   const r=await fetch('/api/squad?team='+encodeURIComponent(team),

@@ -81,7 +81,8 @@ def save_squads(squads: dict) -> None:
 
 def effective_elo(squad: dict) -> float:
     """Team Elo adjusted for the currently selected starting XI."""
-    starters = [p for p in squad["players"] if p["starter"]]
+    starters = [p for p in squad["players"]
+                if p["starter"] and p.get("available", True)]
     if not starters:
         return squad["base_elo"]
     avg = sum(p["rating"] for p in starters) / len(starters)

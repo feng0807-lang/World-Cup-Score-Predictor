@@ -418,9 +418,14 @@ class Handler(BaseHTTPRequestHandler):
 
         for p in SQUADS[team]["players"]:
             if p["id"] in incoming:
-                p["starter"] = bool(incoming[p["id"]].get("starter", p["starter"]))
-                if "rating" in incoming[p["id"]]:
-                    p["rating"] = max(1, min(99, int(incoming[p["id"]]["rating"])))
+                inc = incoming[p["id"]]
+                if "available" in inc:
+                    p["available"] = bool(inc["available"])
+                p["starter"] = bool(inc.get("starter", p["starter"]))
+                if not p.get("available", True):
+                    p["starter"] = False   # injured players can't start
+                if "rating" in inc:
+                    p["rating"] = max(1, min(99, int(inc["rating"])))
 
         squads_mod.save_squads(SQUADS)
         eff = squads_mod.effective_elo(SQUADS[team])

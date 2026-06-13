@@ -1367,6 +1367,12 @@ RAW: dict[str, str] = {
 
 LINE_RE = re.compile(r"^\s*(\d+)\s+(GK|DF|MF|FW)\s+(.+?)\s*$")
 
+# Players currently unavailable (injury/suspension). They're flagged out and
+# excluded from the auto-picked default XI. Edit, or manage live in the editor.
+INJURED: dict[str, list[str]] = {
+    "Brazil": ["Neymar"],
+}
+
 
 def baseline_rating(elo: int) -> float:
     return max(45.0, min(95.0, 50 + (elo - 1600) / 12))
@@ -1393,14 +1399,16 @@ def build() -> dict:
             # so default starting XIs look sensible before the user edits them.
             starter_bonus = 4 if number <= 11 else 0
             rating = max(40, min(99, round(base + starter_bonus + rng.uniform(-2.5, 2.5))))
+            available = name not in INJURED.get(team, [])
             players.append({"id": pid, "number": number, "name": name,
-                            "pos": pos, "rating": rating, "starter": False})
+                            "pos": pos, "rating": rating, "starter": False,
+                            "available": available})
             pid += 1
 
-        # Default starting XI: best GK + best 4 DEF + best 3 MID + best 3 FWD.
+        # Default starting XI from AVAILABLE players: best GK + 4 DEF + 3 MID + 3 FWD.
         need = {"GK": 1, "DEF": 4, "MID": 3, "FWD": 3}
         for pos, n in need.items():
-            ranked = sorted((p for p in players if p["pos"] == pos),
+            ranked = sorted((p for p in players if p["pos"] == pos and p["available"]),
                             key=lambda p: p["rating"], reverse=True)
             for p in ranked[:n]:
                 p["starter"] = True
