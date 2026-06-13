@@ -352,6 +352,66 @@ def get_outrights(teams: list[str]) -> dict:
             "requestsRemaining": live.get("requestsRemaining")}
 
 
+_spreads_cache: dict = {}
+
+
+def spreads_market(home: str, away: str) -> dict:
+    """Bookmaker Asian-handicap (spreads) line + best prices for a match."""
+    import statistics
+    key = get_api_key()
+    if not key:
+        return {"available": False, "reason": "no_api_key"}
+    try:
+        sk = discover_sport_key(key)
+        if not sk:
+            return {"available": False, "reason": "no_market"}
+        now = time.time()
+        if sk in _spreads_cache and now - _spreads_cache[sk][0] < CACHE_TTL:
+            _, events, headers = _spreads_cache[sk]
+            cached = True
+        else:
+            url = (f"{API_BASE}/sports/{sk}/odds/?apiKey={key}"
+                   f"&regions={REGIONS}&markets=spreads&oddsFormat=decimal")
+            events, headers = _http_get(url)
+            _spreads_cache[sk] = (now, events, headers)
+            cached = False
+    except urllib.error.HTTPError as e:
+        return {"available": False,
+                "reason": "bad_api_key" if e.code in (401, 403) else f"api_error_{e.code}"}
+    except Exception as e:
+        return {"available": False, "reason": "api_unreachable", "detail": str(e)}
+
+    for ev in events:
+        eh, ea = ev.get("home_team", ""), ev.get("away_team", "")
+        if not ((_matches(home, eh) and _matches(away, ea))
+                or (_matches(home, ea) and _matches(away, eh))):
+            continue
+        home_q, away_q = [], []
+        for bk in ev.get("bookmakers", []):
+            for mkt in bk.get("markets", []):
+                if mkt.get("key") != "spreads":
+                    continue
+                for o in mkt.get("outcomes", []):
+                    pt, pr, nm = o.get("point"), o.get("price"), o.get("name", "")
+                    if pt is None or pr is None:
+                        continue
+                    if _matches(home, nm):
+                        home_q.append((pt, pr, bk["title"]))
+                    elif _matches(away, nm):
+                        away_q.append((pt, pr, bk["title"]))
+        if not home_q:
+            continue
+        line = statistics.median(sorted(p for p, _, _ in home_q))
+        bh = max(home_q, key=lambda x: x[1])
+        ba = max(away_q, key=lambda x: x[1]) if away_q else None
+        return {"available": True, "homeLine": line, "cached": cached,
+                "bestHome": {"line": bh[0], "price": bh[1], "book": bh[2]},
+                "bestAway": ({"line": ba[0], "price": ba[1], "book": ba[2]} if ba else None),
+                "bookmakerCount": len({b for _, _, b in home_q}),
+                "requestsRemaining": headers.get("x-requests-remaining")}
+    return {"available": False, "reason": "match_not_listed"}
+
+
 def fetch_scores(days: int = 3) -> dict:
     """Recent finished match scores from The Odds API (free with a key).
 

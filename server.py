@@ -29,6 +29,7 @@ import live as live_mod
 import fixtures as fixtures_mod
 import standings as standings_mod
 import handicap as handicap_mod
+import coach as coach_mod
 from model import predict_match
 from tournament import run_simulation
 
@@ -50,8 +51,8 @@ def _lineup_delta(team: str) -> float:
 
 
 def _strength_delta(team: str) -> float:
-    """Combined non-weather strength shift: lineup + live tournament form."""
-    return _lineup_delta(team) + live_mod.get_delta(team)
+    """Combined non-weather strength shift: lineup + live form + coach."""
+    return _lineup_delta(team) + live_mod.get_delta(team) + coach_mod.get_delta(team)
 
 
 def _all_deltas() -> dict[str, float]:
@@ -160,8 +161,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/fixtures":
             return self._send({"fixtures": fixtures_mod.all_fixtures()})
 
+        if path == "/api/coaches":
+            teams_all = sorted({t for grp in teams_mod.GROUPS.values() for t in grp})
+            return self._send({"coaches": coach_mod.all_coaches(teams_all)})
+
         if path == "/api/weather":
             return self._send(climate_mod.live_weather(q.get("venue", [""])[0]))
+
+        if path == "/api/spreads":
+            return self._send(odds_mod.spreads_market(q.get("home", [""])[0],
+                                                      q.get("away", [""])[0]))
 
         if path == "/api/teams":
             elos = squads_mod.effective_elo_map(SQUADS)
@@ -175,6 +184,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send({"error": "home and away required"}, 400)
             lin_h, lin_a = _lineup_delta(home), _lineup_delta(away)
             live_h, live_a = live_mod.get_delta(home), live_mod.get_delta(away)
+            coach_h, coach_a = coach_mod.get_delta(home), coach_mod.get_delta(away)
             wx_h = wx_a = 0.0
             climate_info = None
             venue = q.get("venue", [""])[0]
@@ -183,16 +193,18 @@ class Handler(BaseHTTPRequestHandler):
                 assess = climate_mod.climate_assessment(home, away, weather)
                 wx_h, wx_a = assess["deltaHome"], assess["deltaAway"]
                 climate_info = {"venue": venue, "weather": weather, "assessment": assess}
-            dh = lin_h + live_h + wx_h
-            da = lin_a + live_a + wx_a
+            dh = lin_h + live_h + wx_h + coach_h
+            da = lin_a + live_a + wx_a + coach_a
             p = predict_match(home, away, dh, da)
             base_h, base_a = secure.trained_elo(home), secure.trained_elo(away)
             breakdown = {
                 "home": {"base": round(base_h, 1), "lineup": round(lin_h, 1),
                          "liveForm": round(live_h, 1), "weather": round(wx_h, 1),
+                         "coach": round(coach_h, 1), "coachName": coach_mod.get(home)["name"],
                          "effective": round(base_h + dh, 1)},
                 "away": {"base": round(base_a, 1), "lineup": round(lin_a, 1),
                          "liveForm": round(live_a, 1), "weather": round(wx_a, 1),
+                         "coach": round(coach_a, 1), "coachName": coach_mod.get(away)["name"],
                          "effective": round(base_a + da, 1)},
             }
             return self._send({
@@ -344,6 +356,15 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/resetratings":
             live_mod.reset()
             return self._send({"reset": True})
+
+        if url.path == "/api/coach":
+            team = body.get("team", "")
+            if not team:
+                return self._send({"error": "team required"}, 400)
+            adj = body.get("adj")
+            return self._send(coach_mod.update(
+                team, name=body.get("name"), since=body.get("since"),
+                adj=float(adj) if adj is not None else None))
 
         if url.path == "/api/savesim":
             runs = int(body.get("runs", 5000))

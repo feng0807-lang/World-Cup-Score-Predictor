@@ -122,6 +122,10 @@
     <div class="card" id="hcapCard">
       <h2>Asian Handicap (model fair lines)</h2>
       <div id="hcapMeta" class="muted" style="font-size:13px;margin-bottom:8px"></div>
+      <div class="row" style="font-size:13px;margin-bottom:8px">
+        <button class="ghost" onclick="fetchSpreads()">Fetch bookie handicap line</button>
+        <span id="spreadsBox" class="muted"></span>
+      </div>
       <table>
         <thead><tr><th>Home line</th><th class="num">Home cover</th><th class="num">Push</th>
           <th class="num">Away cover</th><th class="num">Fair (home)</th><th class="num">Fair (away)</th></tr></thead>
@@ -302,6 +306,14 @@
       </div>
       <p class="note">Tick exactly 11 players as starters. The starting XI's average rating
         moves the team's effective Elo, which feeds the predictions.</p>
+      <div class="row" style="font-size:13px;border-top:1px solid var(--line);padding-top:10px">
+        <span class="muted">👔 Coach:</span>
+        <input id="coachName" placeholder="coach name" style="width:170px">
+        <select id="coachSince"><option value="pre">long-serving</option><option value="new">new (pre-WC)</option></select>
+        <label>adj <input id="coachAdj" type="number" step="1" value="0" style="width:60px"> Elo</label>
+        <button class="ghost" onclick="saveCoach()">Save coach</button>
+        <span id="coachStatus" class="muted"></span>
+      </div>
       <table><thead><tr><th>Start</th><th class="num">#</th><th>Player</th><th>Pos</th><th class="num">Rating</th></tr></thead>
         <tbody id="squadBody"></tbody></table>
     </div>
@@ -388,6 +400,7 @@ async function predict(){
       if(o.lineup) parts.push(`lineup ${o.lineup>0?'+':''}${o.lineup}`);
       if(o.liveForm) parts.push(`form ${o.liveForm>0?'+':''}${o.liveForm}`);
       if(o.weather) parts.push(`weather ${o.weather>0?'+':''}${o.weather}`);
+      if(o.coach) parts.push(`coach ${o.coach>0?'+':''}${o.coach}`);
       const adj=parts.length?` (${parts.join(', ')})`:'';
       return `${name}: base ${o.base} → <b>${o.effective}</b>${adj}`;
     };
@@ -492,6 +505,21 @@ function renderOdds(d){
   }else br.classList.add('hidden');
 }
 
+async function fetchSpreads(){
+  const h=$('#home').value, a=$('#away').value;
+  $('#spreadsBox').textContent='fetching…';
+  const d=await (await fetch(`/api/spreads?home=${encodeURIComponent(h)}&away=${encodeURIComponent(a)}`)).json();
+  if(!d.available){
+    const r={no_api_key:'no API key (set one in Bookmaker odds)',match_not_listed:'match not in feed yet',
+      no_market:'no live market',bad_api_key:'key rejected',api_unreachable:'API unreachable'}[d.reason]||d.reason;
+    $('#spreadsBox').textContent='bookie line: '+r; return;
+  }
+  const bh=d.bestHome, ba=d.bestAway;
+  $('#spreadsBox').innerHTML=`market <b>${h} ${d.homeLine>0?'+':''}${d.homeLine}</b> · `+
+    `best ${h} ${bh.line>0?'+':''}${bh.line} @ ${bh.price} (${bh.book})`+
+    (ba?` · best ${a} ${ba.line>0?'+':''}${ba.line} @ ${ba.price} (${ba.book})`:'')+
+    ` · ${d.bookmakerCount} books`;
+}
 async function simulate(){
   $('#simStatus').textContent='running…';
   const runs=$('#runs').value;
@@ -686,6 +714,22 @@ async function loadSquad(){
   $('#baseElo').textContent=d.baseElo;
   $('#effElo').textContent=d.effectiveElo;
   renderSquad();
+  loadCoach(team);
+}
+let _coaches=null;
+async function loadCoach(team){
+  if(!_coaches){ try{ _coaches=(await (await fetch('/api/coaches')).json()).coaches||[]; }catch(e){ _coaches=[]; } }
+  const c=_coaches.find(x=>x.team===team)||{name:'',since:'pre',adj:0};
+  $('#coachName').value=c.name||''; $('#coachSince').value=c.since||'pre'; $('#coachAdj').value=c.adj||0;
+  $('#coachStatus').textContent='';
+}
+async function saveCoach(){
+  const team=$('#lineupTeam').value;
+  const body={team,name:$('#coachName').value,since:$('#coachSince').value,adj:+$('#coachAdj').value};
+  const d=await (await fetch('/api/coach',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)})).json();
+  if(_coaches){ const i=_coaches.findIndex(x=>x.team===team); if(i>=0) _coaches[i]={team,...d}; }
+  $('#coachStatus').textContent='✓ saved';
 }
 function renderSquad(){
   $('#squadBody').innerHTML=currentSquad.map(p=>
