@@ -118,6 +118,19 @@
       </div>
     </div>
 
+    <!-- ASIAN HANDICAP -->
+    <div class="card" id="hcapCard">
+      <h2>Asian Handicap (model fair lines)</h2>
+      <div id="hcapMeta" class="muted" style="font-size:13px;margin-bottom:8px"></div>
+      <table>
+        <thead><tr><th>Home line</th><th class="num">Home cover</th><th class="num">Push</th>
+          <th class="num">Away cover</th><th class="num">Fair (home)</th><th class="num">Fair (away)</th></tr></thead>
+        <tbody id="hcapBody"></tbody>
+      </table>
+      <p class="note">"Fair" = zero-margin odds implied by the model. The line nearest
+        50/50 is the model's pick'em handicap.</p>
+    </div>
+
     <!-- MARKET & VALUE -->
     <div class="card" id="oddsCard">
       <h2>Bookmaker odds &amp; value</h2>
@@ -393,6 +406,22 @@ async function predict(){
       `squad-club acclimatization — ${d.home} ~${a.homeClubTemp}°C, ${d.away} ~${a.awayClubTemp}°C `+
       `&nbsp;·&nbsp; <span class="starter">${edge}</span>`;
   } else cb.classList.add('hidden');
+  // Asian handicap table
+  if(d.handicap){
+    const hc=d.handicap;
+    const fav = hc.supremacy>0?d.home:hc.supremacy<0?d.away:'neither';
+    $('#hcapMeta').innerHTML=`Expected supremacy: <b>${hc.supremacy>0?'+':''}${hc.supremacy}</b> `+
+      `(${fav==='neither'?'level':fav+' favoured'}) · model pick'em line for ${d.home}: <b class="starter">${hc.fairLine>0?'+':''}${hc.fairLine}</b>`;
+    $('#hcapBody').innerHTML=hc.lines.map(r=>{
+      const isFair=Math.abs(r.line-hc.fairLine)<1e-9;
+      const pc=v=>(v*100).toFixed(1)+'%';
+      return `<tr style="${isFair?'background:#16271c':''}">
+        <td>${r.line>0?'+':''}${r.line}${isFair?' <span class="muted">(fair)</span>':''}</td>
+        <td class="num">${pc(r.homeCover)}</td><td class="num muted">${pc(r.push)}</td>
+        <td class="num">${pc(r.awayCover)}</td>
+        <td class="num">${r.fairHome??'–'}</td><td class="num">${r.fairAway??'–'}</td></tr>`;
+    }).join('');
+  }
   const max=Math.max(...d.scorelines.map(s=>s.p));
   $('#scoreBody').innerHTML=d.scorelines.map(s=>
     `<tr><td>${s.score}</td><td class="num">${(s.p*100).toFixed(1)}%</td>

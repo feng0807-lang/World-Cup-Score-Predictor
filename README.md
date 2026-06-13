@@ -60,6 +60,13 @@ The **Fixtures** tab lists all **72 group-stage matches** with date and host
 **stadium** (`fixtures.py`). Click any match to predict it in the Match
 Predictor with that venue's **live weather** already applied.
 
+## Asian Handicap
+
+The Match Predictor shows model **Asian-Handicap** cover probabilities derived
+from the full scoreline distribution (`handicap.py`): for each line (incl.
+quarter lines) the home/away cover %, push %, and **fair (zero-vig) odds**, with
+the model's pick'em line highlighted. Expected supremacy is shown too.
+
 ## Live tournament tracking
 
 As the tournament plays out:

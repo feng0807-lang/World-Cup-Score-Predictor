@@ -28,6 +28,7 @@ import climate as climate_mod
 import live as live_mod
 import fixtures as fixtures_mod
 import standings as standings_mod
+import handicap as handicap_mod
 from model import predict_match
 from tournament import run_simulation
 
@@ -203,6 +204,7 @@ class Handler(BaseHTTPRequestHandler):
                 "scorelines": [{"score": f"{i}-{j}", "p": pr}
                                for (i, j), pr in p.top_scorelines(8)],
                 "climate": climate_info, "ratings": breakdown,
+                "handicap": handicap_mod.cover_table(p.scoreline_probs),
             })
 
         if path == "/api/simulate":
