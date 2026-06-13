@@ -27,6 +27,7 @@ import history as history_mod
 import climate as climate_mod
 import live as live_mod
 import fixtures as fixtures_mod
+import standings as standings_mod
 from model import predict_match
 from tournament import run_simulation
 
@@ -214,7 +215,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send({"entries": history_mod.read_history(date, kind)})
 
         if path == "/api/liveratings":
-            return self._send({"ratings": live_mod.table()})
+            return self._send({"ratings": live_mod.table(), "results": live_mod.results()})
+
+        if path == "/api/standings":
+            return self._send({"standings": standings_mod.standings()})
+
+        if path == "/api/bracket":
+            if not secure.available():
+                return self._send({"error": "model_unavailable"}, 503)
+            return self._send(standings_mod.bracket())
 
         if path == "/api/sims":
             return self._send({"simulations": history_mod.list_simulations()})
@@ -288,10 +297,47 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send({"error": "home/away/homeGoals/awayGoals required"}, 400)
             if not secure.available():
                 return self._send({"error": "model_unavailable"}, 503)
-            res = live_mod.update_result(home, away, gh, ga, bool(body.get("neutral", True)))
+            neutral = bool(body.get("neutral", True))
+            # Surprise: the model's pre-result prediction vs what happened.
+            p = predict_match(home, away, _strength_delta(home), _strength_delta(away))
+            outcome = "home" if gh > ga else ("away" if ga > gh else "draw")
+            p_out = {"home": p.p_home_win, "draw": p.p_draw, "away": p.p_away_win}[outcome]
+            surprise = ("as expected" if p_out >= 0.5 else "plausible" if p_out >= 0.33
+                        else "mild upset" if p_out >= 0.18 else "big upset")
+            live_mod.record_result(home, away, gh, ga, neutral, source="manual")
             history_mod.log_input("result", {"home": home, "away": away,
-                                  "score": f"{gh}-{ga}", "change": res["change"]})
-            return self._send(res)
+                                  "score": f"{gh}-{ga}", "outcome": outcome,
+                                  "modelProb": round(p_out, 3), "surprise": surprise})
+            return self._send({
+                "home": home, "away": away, "score": f"{gh}-{ga}", "outcome": outcome,
+                "model": {"pHome": p.p_home_win, "pDraw": p.p_draw, "pAway": p.p_away_win,
+                          "expected": list(p.expected_score)},
+                "outcomeProb": round(p_out, 3), "surprise": surprise,
+                "homeElo": round(live_mod.effective_elo_disp(home), 1),
+                "awayElo": round(live_mod.effective_elo_disp(away), 1),
+                "homeDelta": live_mod.get_delta(home), "awayDelta": live_mod.get_delta(away),
+            })
+
+        if url.path == "/api/syncresults":
+            if not secure.available():
+                return self._send({"error": "model_unavailable"}, 503)
+            sc = odds_mod.fetch_scores(int(body.get("days", 3)))
+            if not sc.get("available"):
+                return self._send({"applied": 0, "reason": sc.get("reason"),
+                                   "requestsRemaining": sc.get("requestsRemaining")})
+            known = list(teams_mod.ELO)
+            existing = {r["key"] for r in live_mod.results()}
+            applied = []
+            for m in sc["matches"]:
+                h = odds_mod.to_known_team(m["home"], known)
+                a = odds_mod.to_known_team(m["away"], known)
+                if not h or not a or m["id"] in existing:
+                    continue
+                live_mod.record_result(h, a, m["gh"], m["ga"], neutral=True,
+                                       source="odds-api", ext_id=m["id"])
+                applied.append({"home": h, "away": a, "score": f"{m['gh']}-{m['ga']}"})
+            return self._send({"applied": len(applied), "matches": applied,
+                               "requestsRemaining": sc.get("requestsRemaining")})
 
         if url.path == "/api/resetratings":
             live_mod.reset()

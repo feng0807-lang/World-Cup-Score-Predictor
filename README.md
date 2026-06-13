@@ -60,6 +60,19 @@ The **Fixtures** tab lists all **72 group-stage matches** with date and host
 **stadium** (`fixtures.py`). Click any match to predict it in the Match
 Predictor with that venue's **live weather** already applied.
 
+## Live tournament tracking
+
+As the tournament plays out:
+
+- **Record results** (History → Live ratings) or **⟳ Sync live (API)** to
+  auto-pull finished scores from The Odds API. Each result updates team ratings
+  (online Elo, idempotent — stored in `data/results.json` and replayed).
+- Recording a result shows a **surprise readout** — the model's pre-match
+  prediction vs what happened ("as expected" → "big upset").
+- **Standings & Bracket** tab: live group tables built from results, plus a
+  **projected Round of 32** (current top-2 + 8 best thirds, model-seeded).
+- All recorded results flow into predictions and the simulation automatically.
+
 ## How ratings work (the "mix")
 
 A prediction combines several rating signals, all expressed on the Elo scale:

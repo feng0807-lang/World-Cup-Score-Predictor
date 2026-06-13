@@ -352,6 +352,51 @@ def get_outrights(teams: list[str]) -> dict:
             "requestsRemaining": live.get("requestsRemaining")}
 
 
+def fetch_scores(days: int = 3) -> dict:
+    """Recent finished match scores from The Odds API (free with a key).
+
+    Returns {"available": bool, "matches": [{home, away, gh, ga, id, completed}]}
+    for the active World Cup sport. Used to auto-update live ratings.
+    """
+    key = get_api_key()
+    if not key:
+        return {"available": False, "reason": "no_api_key"}
+    try:
+        sk = discover_sport_key(key)
+        if not sk:
+            return {"available": False, "reason": "no_market"}
+        url = f"{API_BASE}/sports/{sk}/scores/?apiKey={key}&daysFrom={days}"
+        data, headers = _http_get(url)
+    except urllib.error.HTTPError as e:
+        return {"available": False,
+                "reason": "bad_api_key" if e.code in (401, 403) else f"api_error_{e.code}"}
+    except Exception as e:
+        return {"available": False, "reason": "api_unreachable", "detail": str(e)}
+
+    matches = []
+    for ev in data:
+        if not ev.get("completed"):
+            continue
+        sc = {s["name"]: s.get("score") for s in (ev.get("scores") or [])}
+        eh, ea = ev.get("home_team"), ev.get("away_team")
+        try:
+            gh, ga = int(sc.get(eh)), int(sc.get(ea))
+        except (TypeError, ValueError):
+            continue
+        matches.append({"id": ev.get("id"), "home": eh, "away": ea,
+                        "gh": gh, "ga": ga, "completed": True})
+    return {"available": True, "matches": matches,
+            "requestsRemaining": headers.get("x-requests-remaining")}
+
+
+def to_known_team(name: str, known: list[str]) -> str | None:
+    """Map a bookmaker team name to one of our canonical team names."""
+    for t in known:
+        if _matches(t, name):
+            return t
+    return None
+
+
 def get_market(home: str, away: str) -> dict:
     """Prefer live odds; fall back to manual entry; else unavailable."""
     live = live_market(home, away)

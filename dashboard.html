@@ -70,6 +70,7 @@
 <div class="tabs">
   <div class="tab active" data-tab="match">Match Predictor</div>
   <div class="tab" data-tab="tourney">Tournament Table</div>
+  <div class="tab" data-tab="standings">Standings &amp; Bracket</div>
   <div class="tab" data-tab="lineup">Starting XI Editor</div>
   <div class="tab" data-tab="history">History &amp; Backtrack</div>
 </div>
@@ -199,6 +200,21 @@
     </div>
   </section>
 
+  <!-- STANDINGS & BRACKET -->
+  <section id="tab-standings" class="hidden">
+    <div class="card">
+      <h2>Live group standings</h2>
+      <p class="note">Built from recorded results (enter them in History → Live ratings,
+        or Sync from the API). Top 2 of each group + 8 best 3rd-placed advance.</p>
+      <div id="standingsBox" class="muted">No results yet.</div>
+    </div>
+    <div class="card">
+      <h2>Projected Round of 32</h2>
+      <p class="note" id="bracketNote"></p>
+      <div id="bracketBox" class="muted"></div>
+    </div>
+  </section>
+
   <!-- HISTORY -->
   <section id="tab-history" class="hidden">
     <div class="card">
@@ -213,6 +229,7 @@
         <select id="resAway"></select>
         <label style="font-size:12px"><input type="checkbox" id="resNeutral" checked> neutral</label>
         <button onclick="recordResult()">Record result</button>
+        <button class="ghost" onclick="syncResults()">⟳ Sync live (API)</button>
         <button class="ghost" onclick="resetRatings()">Reset all</button>
         <span id="resStatus" class="spin"></span>
       </div>
@@ -314,9 +331,10 @@ async function init(){
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   t.classList.add('active');
-  ['match','tourney','lineup','history'].forEach(name=>
+  ['match','tourney','standings','lineup','history'].forEach(name=>
     $('#tab-'+name).classList.toggle('hidden', name!==t.dataset.tab));
   if(t.dataset.tab==='history'){ loadHistory(); loadLiveRatings(); }
+  if(t.dataset.tab==='standings') loadStandings();
 });
 
 $('#venue') && ($('#venue').onchange=showVenueWeather);
@@ -498,9 +516,50 @@ async function recordResult(){
   const d=await (await fetch('/api/result',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)})).json();
   if(d.error){$('#resStatus').textContent=d.error;return;}
-  $('#resStatus').textContent=`✓ ${d.home} ${d.score} ${d.away} · Δ ${d.change>0?'+':''}${d.change}`;
+  const m=d.model, mp=(d.outcomeProb*100).toFixed(0);
+  $('#resStatus').innerHTML=`✓ ${d.home} ${d.score} ${d.away} — <b class="starter">${d.surprise}</b> `+
+    `<span class="muted">(model: ${d.home} ${(m.pHome*100).toFixed(0)}% / draw ${(m.pDraw*100).toFixed(0)}% / ${d.away} ${(m.pAway*100).toFixed(0)}% → outcome ${mp}%)</span>`;
   loadLiveRatings();
 }
+async function syncResults(){
+  $('#resStatus').textContent='syncing live results…';
+  const d=await (await fetch('/api/syncresults',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({days:3})})).json();
+  if(d.applied>0){ $('#resStatus').textContent=`✓ synced ${d.applied} new result(s)`; }
+  else {
+    const r={no_api_key:'no API key — set one in Match → Bookmaker odds, or enter results manually',
+      bad_api_key:'API key rejected', no_market:'no live World Cup market yet',
+      api_unreachable:'could not reach the API'}[d.reason]||'no new results';
+    $('#resStatus').textContent='sync: '+r;
+  }
+  loadLiveRatings();
+}
+async function loadStandings(){
+  const order=['A','B','C','D','E','F','G','H','I','J','K','L'];
+  const s=(await (await fetch('/api/standings')).json()).standings||{};
+  const any=order.some(g=>s[g]&&s[g].some(r=>r.P>0));
+  if(!any){ $('#standingsBox').textContent='No results recorded yet — enter or sync some to see standings.'; }
+  else {
+    $('#standingsBox').innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">'+
+      order.map(g=>{
+        const rows=s[g]||[];
+        return `<div><b>Group ${g}</b><table style="margin-top:4px"><thead><tr>
+          <th>#</th><th>Team</th><th class="num">P</th><th class="num">GD</th><th class="num">Pts</th></tr></thead><tbody>`+
+          rows.map((r,i)=>`<tr><td class="muted">${i+1}</td><td>${r.team}</td>
+            <td class="num">${r.P}</td><td class="num">${r.GD>0?'+':''}${r.GD}</td>
+            <td class="num"><b>${r.Pts}</b></td></tr>`).join('')+`</tbody></table></div>`;
+      }).join('')+'</div>';
+  }
+  // bracket
+  const b=await (await fetch('/api/bracket')).json();
+  if(b.error){ $('#bracketBox').textContent='Model not available.'; return; }
+  $('#bracketNote').textContent=`${b.matchesPlayed}/72 group matches played · `+
+    (b.projected?'projection from current standings + model seeding':'final qualifiers');
+  $('#bracketBox').innerHTML='<table><thead><tr><th>Tie</th><th>Seeded match</th></tr></thead><tbody>'+
+    b.r32.map((p,i)=>`<tr><td class="muted">R32.${i+1}</td><td>${p.a} <span class="muted">vs</span> ${p.b}</td></tr>`).join('')+
+    '</tbody></table>';
+}
+async function loadLiveRatings(){
 async function resetRatings(){
   if(!confirm('Clear all live tournament rating changes?'))return;
   await fetch('/api/resetratings',{method:'POST'});
