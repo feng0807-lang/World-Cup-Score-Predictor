@@ -559,7 +559,6 @@ async function loadStandings(){
     b.r32.map((p,i)=>`<tr><td class="muted">R32.${i+1}</td><td>${p.a} <span class="muted">vs</span> ${p.b}</td></tr>`).join('')+
     '</tbody></table>';
 }
-async function loadLiveRatings(){
 async function resetRatings(){
   if(!confirm('Clear all live tournament rating changes?'))return;
   await fetch('/api/resetratings',{method:'POST'});
