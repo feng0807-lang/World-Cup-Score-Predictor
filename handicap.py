@@ -9,8 +9,8 @@ Pure math on the grid; no model internals exposed.
 from __future__ import annotations
 
 # Home-team handicap lines to report.
-LINES = [-2.0, -1.5, -1.25, -1.0, -0.75, -0.5, -0.25, 0.0,
-         0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+LINES = [-2.5, -2.25, -2.0, -1.75, -1.5, -1.25, -1.0, -0.75, -0.5, -0.25, 0.0,
+         0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5]
 
 
 def _simple_units(margin: float, h: float):
