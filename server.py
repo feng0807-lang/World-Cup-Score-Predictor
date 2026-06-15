@@ -321,6 +321,22 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/form_deltas":
             return self._send({"deltas": form_mod.all_form_deltas(SQUADS)})
 
+        if path == "/api/live_matches":
+            date = q.get("date", [None])[0]
+            try:
+                return self._send({"matches": form_mod.live_matches(date)})
+            except Exception as e:
+                return self._send({"error": str(e), "matches": []})
+
+        if path == "/api/live_stats":
+            event_id = q.get("id", [""])[0]
+            if not event_id:
+                return self._send({"error": "id required"}, 400)
+            try:
+                return self._send({"stats": form_mod.match_stats(event_id)})
+            except Exception as e:
+                return self._send({"error": str(e), "stats": {}})
+
         return self._send({"error": "not found"}, 404)
 
     # --- POST -------------------------------------------------------------

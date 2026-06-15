@@ -140,6 +140,29 @@
     <!-- IN-PLAY MODE -->
     <div class="card" id="liveCard" style="display:none">
       <h2>📍 In-play mode</h2>
+
+      <!-- Live feed row -->
+      <div style="background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-bottom:12px">
+        <div class="row" style="font-size:13px;margin-bottom:6px">
+          <span style="color:#f85149;font-weight:600">🔴 Live feed</span>
+          <select id="liveMatchSel" style="min-width:280px"><option value="">— load ESPN matches —</option></select>
+          <button class="ghost" onclick="fetchLiveMatches()">⟳ Fetch matches</button>
+          <button onclick="loadLiveScore()" id="loadLiveBtn" disabled>Load score</button>
+          <label style="font-size:12px">
+            <input type="checkbox" id="liveAutoRefresh" onchange="toggleAutoRefresh()"> Auto-refresh (30 s)
+          </label>
+          <span id="liveRefreshStatus" class="muted" style="font-size:12px"></span>
+        </div>
+        <div id="liveStatsBox" style="display:none;font-size:12px;margin-top:6px">
+          <table style="margin:0;font-size:12px">
+            <thead><tr><th></th><th class="num" id="liveStatsHomeH">Home</th><th class="num" id="liveStatsAwayH">Away</th></tr></thead>
+            <tbody id="liveStatsBody"></tbody>
+          </table>
+          <button class="ghost" onclick="applyShotSuggestion()" style="margin-top:6px;font-size:12px">📊 Suggest sub % from shot data</button>
+        </div>
+      </div>
+
+      <!-- Manual inputs -->
       <div class="row" style="font-size:13px;margin-bottom:10px">
         <span class="muted">Current score:</span>
         <input id="liveH" type="number" min="0" max="20" value="0" style="width:52px" oninput="calcLive()">
@@ -1043,6 +1066,164 @@ async function saveSquad(){
   $('#effElo').textContent=d.effectiveElo;
   $('#saveStatus').textContent='✓ saved — effective Elo now '+d.effectiveElo;
   init();  // refresh team Elo lists everywhere
+}
+
+// ── Live feed ────────────────────────────────────────────────────────────────
+let _liveMatches = [];
+let _liveStats = null;
+let _liveRefreshTimer = null;
+let _liveEventId = null;
+
+async function fetchLiveMatches() {
+  $('#liveRefreshStatus').textContent = 'fetching…';
+  try {
+    const d = await (await fetch('/api/live_matches')).json();
+    _liveMatches = d.matches || [];
+    const stateOrder = { in: 0, pre: 1, post: 2 };
+    _liveMatches.sort((a, b) => (stateOrder[a.state] ?? 3) - (stateOrder[b.state] ?? 3));
+    const stateLabel = { in: '🔴 LIVE', pre: '⏳ upcoming', post: '✓ FT' };
+    $('#liveMatchSel').innerHTML = '<option value="">— pick a match —</option>' +
+      _liveMatches.map(m =>
+        `<option value="${m.id}">${stateLabel[m.state] || m.state}  ${m.home} ${m.homeScore}–${m.awayScore} ${m.away}  ${m.minute ? m.minute+"'" : m.statusText}</option>`
+      ).join('');
+    $('#liveRefreshStatus').textContent = `${_liveMatches.length} match${_liveMatches.length !== 1 ? 'es' : ''}`;
+    $('#loadLiveBtn').disabled = false;
+    // Auto-select if current prediction teams are in the list
+    if (currentPrediction) {
+      const match = _liveMatches.find(m =>
+        (m.home === currentPrediction.home && m.away === currentPrediction.away) ||
+        (m.away === currentPrediction.home && m.home === currentPrediction.away)
+      );
+      if (match) {
+        $('#liveMatchSel').value = match.id;
+        $('#liveRefreshStatus').textContent += ' · auto-matched current prediction';
+      }
+    }
+  } catch (e) {
+    $('#liveRefreshStatus').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function loadLiveScore() {
+  const id = $('#liveMatchSel').value;
+  if (!id) return;
+  const match = _liveMatches.find(m => m.id === id);
+  if (!match) return;
+  _liveEventId = id;
+
+  // Populate score and minute
+  $('#liveH').value = match.homeScore;
+  $('#liveA').value = match.awayScore;
+  $('#liveMin').value = Math.min(match.minute, 95);
+  liveMinLbl();
+  $('#liveRefreshStatus').textContent = `Loaded ${match.statusText || match.minute + "'"}`;
+
+  // Fetch box stats
+  try {
+    const sd = await (await fetch('/api/live_stats?id=' + id)).json();
+    _liveStats = sd.stats || null;
+    renderLiveStats(match);
+  } catch (e) {
+    _liveStats = null;
+    $('#liveStatsBox').style.display = 'none';
+  }
+
+  calcLive();
+}
+
+function renderLiveStats(match) {
+  if (!_liveStats || (!_liveStats.home && !_liveStats.away)) {
+    $('#liveStatsBox').style.display = 'none';
+    return;
+  }
+  const h = _liveStats.home || {};
+  const a = _liveStats.away || {};
+  const rows = [
+    ['Possession', (h.possessionPct || 0).toFixed(0) + '%', (a.possessionPct || 0).toFixed(0) + '%'],
+    ['Shots', h.totalShots || 0, a.totalShots || 0],
+    ['Shots on target', h.shotsOnTarget || 0, a.shotsOnTarget || 0],
+    ['Corners', h.wonCorners || 0, a.wonCorners || 0],
+    ['Yellow cards', h.yellowCards || 0, a.yellowCards || 0],
+    ['Red cards', h.redCards || 0, a.redCards || 0],
+  ];
+  $('#liveStatsHomeH').textContent = match ? match.home : 'Home';
+  $('#liveStatsAwayH').textContent = match ? match.away : 'Away';
+  $('#liveStatsBody').innerHTML = rows.map(([label, hv, av]) => {
+    const hBold = parseFloat(hv) > parseFloat(av);
+    const aBold = parseFloat(av) > parseFloat(hv);
+    return `<tr>
+      <td class="muted">${label}</td>
+      <td class="num" style="${hBold ? 'color:var(--acc);font-weight:600' : ''}">${hv}</td>
+      <td class="num" style="${aBold ? 'color:var(--acc);font-weight:600' : ''}">${av}</td>
+    </tr>`;
+  }).join('');
+  $('#liveStatsBox').style.display = '';
+}
+
+function applyShotSuggestion() {
+  if (!_liveStats || !currentPrediction) return;
+  const h = _liveStats.home || {};
+  const a = _liveStats.away || {};
+  const sotH = (h.shotsOnTarget || 0) + 0.5; // smooth to avoid div/0
+  const sotA = (a.shotsOnTarget || 0) + 0.5;
+  const lh = currentPrediction.expected[0];
+  const la = currentPrediction.expected[1];
+  // Actual SOT ratio vs model lambda ratio — damped with ^0.35
+  const actualRatio = sotH / sotA;
+  const modelRatio = lh / (la || 0.01);
+  const factor = Math.pow(actualRatio / modelRatio, 0.35);
+  // Convert factor to sub % adjustment
+  const adjH = Math.round((factor - 1) * 100 / 2) * 2;  // round to nearest 2%
+  const adjA = Math.round((1 / factor - 1) * 100 / 2) * 2;
+  $('#liveSubH').value = Math.max(-40, Math.min(40, adjH));
+  $('#liveSubA').value = Math.max(-40, Math.min(40, adjA));
+  $('#liveRefreshStatus').textContent =
+    `Shot suggestion applied: home ${adjH >= 0 ? '+' : ''}${adjH}%, away ${adjA >= 0 ? '+' : ''}${adjA}%`;
+  calcLive();
+}
+
+async function _refreshLive() {
+  const id = _liveEventId || $('#liveMatchSel').value;
+  if (!id) return;
+  const match = _liveMatches.find(m => m.id === id);
+  try {
+    // Re-fetch match list to get updated score/minute
+    const d = await (await fetch('/api/live_matches')).json();
+    _liveMatches = d.matches || [];
+    const updated = _liveMatches.find(m => m.id === id);
+    if (updated) {
+      // Only update score/minute if the match is still in progress
+      if (updated.state === 'in' || updated.state === 'post') {
+        $('#liveH').value = updated.homeScore;
+        $('#liveA').value = updated.awayScore;
+        $('#liveMin').value = Math.min(updated.minute, 95);
+        liveMinLbl();
+        const now = new Date().toLocaleTimeString();
+        $('#liveRefreshStatus').textContent = `Auto-updated ${now} · ${updated.statusText || updated.minute + "'"}`;
+        // Also refresh stats
+        const sd = await (await fetch('/api/live_stats?id=' + id)).json();
+        _liveStats = sd.stats || null;
+        renderLiveStats(updated);
+      } else if (updated.state === 'pre') {
+        $('#liveRefreshStatus').textContent = 'Match not started yet — waiting…';
+      }
+      calcLive();
+    }
+  } catch (e) {
+    $('#liveRefreshStatus').textContent = 'Refresh error: ' + e.message;
+  }
+}
+
+function toggleAutoRefresh() {
+  if ($('#liveAutoRefresh').checked) {
+    _liveRefreshTimer = setInterval(_refreshLive, 30000);
+    $('#liveRefreshStatus').textContent = 'Auto-refresh active (30 s)';
+    _refreshLive(); // immediate first refresh
+  } else {
+    clearInterval(_liveRefreshTimer);
+    _liveRefreshTimer = null;
+    $('#liveRefreshStatus').textContent = 'Auto-refresh off';
+  }
 }
 
 // ── Poisson math (client-side, used by in-play + bets) ───────────────────────

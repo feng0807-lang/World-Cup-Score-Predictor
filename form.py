@@ -317,3 +317,60 @@ def squad_form_detail(squad: dict, team_name: str, cache: dict | None = None) ->
 def meta() -> dict:
     cache = _load_cache()
     return {k: v for k, v in cache.items() if k != "players"}
+
+
+# ----------------------------------------------------------------- live --
+
+def live_matches(date_str: str | None = None) -> list[dict]:
+    """Return today's WC matches (live, pre, or recent) from ESPN scoreboard."""
+    import re as _re
+    if date_str is None:
+        date_str = datetime.utcnow().strftime("%Y%m%d")
+    sess = _session()
+    r = sess.get(f"{ESPN_BOARD}?dates={date_str}", timeout=10)
+    r.raise_for_status()
+    out = []
+    for ev in r.json().get("events", []):
+        status = ev.get("status", {})
+        state = status.get("type", {}).get("state", "pre")
+        comp = (ev.get("competitions") or [{}])[0]
+        competitors = comp.get("competitors", [])
+        home = next((c for c in competitors if c.get("homeAway") == "home"), {})
+        away = next((c for c in competitors if c.get("homeAway") == "away"), {})
+        clock = status.get("displayClock", "0")
+        m = _re.search(r"\d+", str(clock))
+        minute = int(m.group()) if m else 0
+        out.append({
+            "id": ev.get("id", ""),
+            "home": _canonical_team(home.get("team", {}).get("displayName", "")),
+            "away": _canonical_team(away.get("team", {}).get("displayName", "")),
+            "homeScore": int(home.get("score") or 0),
+            "awayScore": int(away.get("score") or 0),
+            "minute": minute,
+            "period": status.get("period", 1),
+            "state": state,
+            "statusText": status.get("type", {}).get("shortDetail", ""),
+        })
+    return out
+
+
+def match_stats(event_id: str) -> dict:
+    """Return live boxscore stats for one ESPN event.
+
+    Returns {"home": {...}, "away": {...}} with keys like
+    shotsOnTarget, totalShots, possessionPct, wonCorners, yellowCards, redCards.
+    """
+    sess = _session()
+    r = sess.get(f"{ESPN_SUMMARY}?event={event_id}", timeout=10)
+    r.raise_for_status()
+    result: dict[str, dict[str, float]] = {}
+    for team_box in r.json().get("boxscore", {}).get("teams", []):
+        side = team_box.get("homeAway", "")
+        stats: dict[str, float] = {}
+        for st in team_box.get("statistics", []):
+            try:
+                stats[st["name"]] = float(st.get("value") or st.get("displayValue") or 0)
+            except (ValueError, TypeError):
+                stats[st["name"]] = 0.0
+        result[side] = stats
+    return result
