@@ -30,6 +30,8 @@ import fixtures as fixtures_mod
 import standings as standings_mod
 import handicap as handicap_mod
 import coach as coach_mod
+import sim_fixtures as sim_mod
+import form as form_mod
 from model import predict_match
 from tournament import run_simulation
 
@@ -51,8 +53,10 @@ def _lineup_delta(team: str) -> float:
 
 
 def _strength_delta(team: str) -> float:
-    """Combined non-weather strength shift: lineup + live form + coach."""
-    return _lineup_delta(team) + live_mod.get_delta(team) + coach_mod.get_delta(team)
+    """Combined non-weather strength shift: lineup + live + coach + sim + form."""
+    return (_lineup_delta(team) + live_mod.get_delta(team)
+            + coach_mod.get_delta(team) + sim_mod.get_delta(team)
+            + form_mod.team_form_delta(SQUADS.get(team, {}), team))
 
 
 def _all_deltas() -> dict[str, float]:
@@ -185,6 +189,8 @@ class Handler(BaseHTTPRequestHandler):
             lin_h, lin_a = _lineup_delta(home), _lineup_delta(away)
             live_h, live_a = live_mod.get_delta(home), live_mod.get_delta(away)
             coach_h, coach_a = coach_mod.get_delta(home), coach_mod.get_delta(away)
+            frm_h = form_mod.team_form_delta(SQUADS.get(home, {}), home)
+            frm_a = form_mod.team_form_delta(SQUADS.get(away, {}), away)
             wx_h = wx_a = 0.0
             climate_info = None
             venue = q.get("venue", [""])[0]
@@ -193,18 +199,20 @@ class Handler(BaseHTTPRequestHandler):
                 assess = climate_mod.climate_assessment(home, away, weather)
                 wx_h, wx_a = assess["deltaHome"], assess["deltaAway"]
                 climate_info = {"venue": venue, "weather": weather, "assessment": assess}
-            dh = lin_h + live_h + wx_h + coach_h
-            da = lin_a + live_a + wx_a + coach_a
+            dh = lin_h + live_h + wx_h + coach_h + frm_h
+            da = lin_a + live_a + wx_a + coach_a + frm_a
             p = predict_match(home, away, dh, da)
             base_h, base_a = secure.trained_elo(home), secure.trained_elo(away)
             breakdown = {
                 "home": {"base": round(base_h, 1), "lineup": round(lin_h, 1),
                          "liveForm": round(live_h, 1), "weather": round(wx_h, 1),
                          "coach": round(coach_h, 1), "coachName": coach_mod.get(home)["name"],
+                         "playerForm": round(frm_h, 1),
                          "effective": round(base_h + dh, 1)},
                 "away": {"base": round(base_a, 1), "lineup": round(lin_a, 1),
                          "liveForm": round(live_a, 1), "weather": round(wx_a, 1),
                          "coach": round(coach_a, 1), "coachName": coach_mod.get(away)["name"],
+                         "playerForm": round(frm_a, 1),
                          "effective": round(base_a + da, 1)},
             }
             return self._send({
@@ -283,6 +291,36 @@ class Handler(BaseHTTPRequestHandler):
                 "baseElo": sq["base_elo"], "players": sq["players"],
             })
 
+        if path == "/api/sim_fixtures":
+            if not secure.available():
+                return self._send({"error": "model_unavailable", "modelAvailable": False}, 503)
+            runs = int(q.get("runs", ["1000"])[0])
+            deltas = {t: _lineup_delta(t) + live_mod.get_delta(t) + coach_mod.get_delta(t)
+                      for t in SQUADS}
+            return self._send(sim_mod.simulate_all(runs, deltas))
+
+        if path == "/api/sim_meta":
+            return self._send(sim_mod.meta())
+
+        if path == "/api/form":
+            team = q.get("team", [""])[0]
+            if not team or team not in SQUADS:
+                return self._send({"error": "unknown team"}, 404)
+            cache = form_mod._load_cache()
+            detail = form_mod.squad_form_detail(SQUADS[team], team, cache)
+            delta = form_mod.team_form_delta(SQUADS[team], team, cache)
+            return self._send({
+                "team": team, "formDelta": delta,
+                "hasCacheData": bool(cache),
+                "players": detail,
+            })
+
+        if path == "/api/form_meta":
+            return self._send(form_mod.meta())
+
+        if path == "/api/form_deltas":
+            return self._send({"deltas": form_mod.all_form_deltas(SQUADS)})
+
         return self._send({"error": "not found"}, 404)
 
     # --- POST -------------------------------------------------------------
@@ -356,6 +394,23 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/resetratings":
             live_mod.reset()
             return self._send({"reset": True})
+
+        if url.path == "/api/reset_sim_ratings":
+            sim_mod.reset()
+            return self._send({"reset": True})
+
+        if url.path == "/api/refresh_form":
+            try:
+                cache = form_mod.fetch_form(force=True)
+                return self._send({
+                    "ok": True,
+                    "matchesScanned": cache.get("matchesScanned", 0),
+                    "teamsWithData": cache.get("teamsWithData", 0),
+                    "ts": cache.get("ts", ""),
+                    "errors": cache.get("errors", []),
+                })
+            except Exception as e:
+                return self._send({"ok": False, "error": str(e)}, 500)
 
         if url.path == "/api/coach":
             team = body.get("team", "")

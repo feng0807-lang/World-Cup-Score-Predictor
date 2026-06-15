@@ -425,7 +425,7 @@ def fetch_scores(days: int = 3) -> dict:
         sk = discover_sport_key(key)
         if not sk:
             return {"available": False, "reason": "no_market"}
-        url = f"{API_BASE}/sports/{sk}/scores/?apiKey={key}&daysFrom={days}"
+        url = f"{API_BASE}/sports/{sk}/scores/?apiKey={key}&daysFrom={min(days, 3)}&dateFormat=iso"
         data, headers = _http_get(url)
     except urllib.error.HTTPError as e:
         return {"available": False,

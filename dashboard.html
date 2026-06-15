@@ -73,6 +73,7 @@
   <div class="tab" data-tab="standings">Standings &amp; Bracket</div>
   <div class="tab" data-tab="lineup">Starting XI Editor</div>
   <div class="tab" data-tab="history">History &amp; Backtrack</div>
+  <div class="tab" data-tab="simfix">Fixture Forecast</div>
 </div>
 
 <main>
@@ -301,7 +302,10 @@
         <select id="lineupTeam" onchange="loadSquad()"></select>
         <span class="pill">Base Elo: <b id="baseElo">–</b></span>
         <span class="pill">Effective Elo: <b id="effElo" class="starter">–</b></span>
+        <span class="pill">Form Δ: <b id="formDelta" class="starter">–</b></span>
         <button onclick="saveSquad()">Save lineup</button>
+        <button class="ghost" onclick="refreshForm()" id="formRefreshBtn">↻ Fetch player form</button>
+        <span id="formStatus" class="muted" style="font-size:12px"></span>
         <span id="saveStatus" class="spin"></span>
       </div>
       <p class="note">Tick exactly 11 players as starters. The starting XI's average rating
@@ -314,8 +318,56 @@
         <button class="ghost" onclick="saveCoach()">Save coach</button>
         <span id="coachStatus" class="muted"></span>
       </div>
-      <table><thead><tr><th>Start</th><th class="num">#</th><th>Player</th><th>Pos</th><th class="num">Rating</th><th>Avail</th></tr></thead>
+      <table><thead><tr><th>Start</th><th class="num">#</th><th>Player</th><th>Pos</th>
+        <th class="num">Rating</th><th class="num" title="ESPN form score (1-10)">Form</th>
+        <th class="num" title="Elo impact from form (±10)">Form Elo Δ</th><th>Avail</th></tr></thead>
         <tbody id="squadBody"></tbody></table>
+    </div>
+  </section>
+
+  <!-- FIXTURE FORECAST -->
+  <section id="tab-simfix" class="hidden">
+    <div class="card">
+      <h2>Fixture forecast — simulate every unplayed match</h2>
+      <div class="row">
+        <label>Runs per match:
+          <select id="sfRuns">
+            <option value="500">500</option>
+            <option value="1000" selected>1 000</option>
+            <option value="2000">2 000</option>
+            <option value="5000">5 000</option>
+          </select>
+        </label>
+        <button onclick="runSimFixtures()">▶ Simulate all fixtures</button>
+        <button class="ghost" onclick="resetSimRatings()">✕ Clear sim ratings</button>
+        <span id="sfStatus" class="spin"></span>
+      </div>
+      <div id="sfMeta" class="note hidden"></div>
+      <p class="muted" style="font-size:13px;margin:10px 0 4px">
+        Expected Elo deltas are applied to all team ratings so Match Predictor
+        and Tournament simulation reflect projected form. Clear them to revert.
+      </p>
+      <table style="margin-top:10px">
+        <thead><tr>
+          <th>Grp</th><th>Date</th><th>Home</th><th>Away</th>
+          <th class="num">xScore</th>
+          <th class="num">Home win%</th><th class="num">Draw%</th><th class="num">Away win%</th>
+          <th class="num">Elo Δ (home)</th>
+        </tr></thead>
+        <tbody id="sfMatchBody"></tbody>
+      </table>
+    </div>
+
+    <div class="card" id="sfRatingsCard" style="display:none">
+      <h2>Simulated rating impact</h2>
+      <p class="muted" style="font-size:13px;margin:0 0 8px">
+        Cumulative expected Elo change across all simulated fixtures. Applied to
+        effective ratings immediately — clear above to remove.
+      </p>
+      <table>
+        <thead><tr><th>#</th><th>Team</th><th class="num">Sim Δ</th><th class="num">Effective Elo</th></tr></thead>
+        <tbody id="sfTeamBody"></tbody>
+      </table>
     </div>
   </section>
 </main>
@@ -356,11 +408,86 @@ async function init(){
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   t.classList.add('active');
-  ['match','tourney','standings','lineup','history'].forEach(name=>
+  ['match','tourney','standings','lineup','history','simfix'].forEach(name=>
     $('#tab-'+name).classList.toggle('hidden', name!==t.dataset.tab));
   if(t.dataset.tab==='history'){ loadHistory(); loadLiveRatings(); }
   if(t.dataset.tab==='standings') loadStandings();
+  if(t.dataset.tab==='simfix') loadSimMeta();
 });
+
+async function loadSimMeta(){
+  try{
+    const m = await (await fetch('/api/sim_meta')).json();
+    if(m.ts){
+      $('#sfMeta').classList.remove('hidden');
+      $('#sfMeta').textContent =
+        `Last run: ${m.ts} · ${m.runs} runs/match · ${m.matchCount} fixtures simulated`;
+    }
+  }catch(e){}
+}
+
+async function runSimFixtures(){
+  const runs = +$('#sfRuns').value;
+  $('#sfStatus').textContent = `Simulating ${runs} runs per match…`;
+  $('#sfMatchBody').innerHTML = '';
+  $('#sfRatingsCard').style.display = 'none';
+  try{
+    const r = await fetch(`/api/sim_fixtures?runs=${runs}`);
+    if(!r.ok){ const e=await r.json(); $('#sfStatus').textContent='Error: '+(e.error||r.status); return; }
+    const d = await r.json();
+    $('#sfStatus').textContent = `✓ ${d.unplayedCount} fixtures × ${d.runs} runs`;
+    $('#sfMeta').classList.remove('hidden');
+    $('#sfMeta').textContent =
+      `Last run: just now · ${d.runs} runs/match · ${d.unplayedCount} fixtures simulated`;
+
+    const pct = v => (v*100).toFixed(1)+'%';
+    $('#sfMatchBody').innerHTML = d.matches.map(m => {
+      const best = m.pHome > m.pAway && m.pHome > m.pDraw ? 'home'
+                 : m.pAway > m.pHome && m.pAway > m.pDraw ? 'away' : 'draw';
+      return `<tr>
+        <td class="muted">${m.group}</td>
+        <td class="muted">${m.date}</td>
+        <td style="${best==='home'?'color:var(--acc);font-weight:600':''}">${m.home}</td>
+        <td style="${best==='away'?'color:var(--acc);font-weight:600':''}">${m.away}</td>
+        <td class="num">${m.xHome.toFixed(2)} – ${m.xAway.toFixed(2)}</td>
+        <td class="num" style="${best==='home'?'color:var(--acc)':''}">${pct(m.pHome)}</td>
+        <td class="num" style="${best==='draw'?'color:var(--warn)':''}">${pct(m.pDraw)}</td>
+        <td class="num" style="${best==='away'?'color:var(--acc)':''}">${pct(m.pAway)}</td>
+        <td class="num" style="color:${m.expEloDeltaHome>0?'var(--acc)':'var(--mut)'}">
+          ${m.expEloDeltaHome>0?'+':''}${m.expEloDeltaHome.toFixed(1)}</td>
+      </tr>`;
+    }).join('');
+
+    // team impact table — merge with live team elos
+    const teamsResp = await (await fetch('/api/teams')).json();
+    const eloMap = Object.fromEntries(teamsResp.teams.map(t=>[t.team, t.elo]));
+    const rows = Object.entries(d.teamDeltas)
+      .sort((a,b)=>b[1]-a[1]);
+    let rank = 0;
+    $('#sfTeamBody').innerHTML = rows.map(([team, delta]) => {
+      rank++;
+      const eff = eloMap[team] ? eloMap[team].toFixed(1) : '—';
+      return `<tr>
+        <td class="muted">${rank}</td>
+        <td>${team}</td>
+        <td class="num" style="color:${delta>0?'var(--acc)':delta<0?'#f85149':'var(--mut)'}">
+          ${delta>0?'+':''}${delta.toFixed(1)}</td>
+        <td class="num">${eff}</td>
+      </tr>`;
+    }).join('');
+    $('#sfRatingsCard').style.display = '';
+    init();
+  }catch(e){ $('#sfStatus').textContent='Error: '+e.message; }
+}
+
+async function resetSimRatings(){
+  await fetch('/api/reset_sim_ratings',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  $('#sfStatus').textContent='✓ sim ratings cleared';
+  $('#sfMeta').classList.add('hidden');
+  $('#sfMatchBody').innerHTML='';
+  $('#sfRatingsCard').style.display='none';
+  init();
+}
 
 $('#venue') && ($('#venue').onchange=showVenueWeather);
 async function showVenueWeather(){
@@ -399,6 +526,7 @@ async function predict(){
       const parts=[];
       if(o.lineup) parts.push(`lineup ${o.lineup>0?'+':''}${o.lineup}`);
       if(o.liveForm) parts.push(`form ${o.liveForm>0?'+':''}${o.liveForm}`);
+      if(o.playerForm) parts.push(`player form ${o.playerForm>0?'+':''}${o.playerForm}`);
       if(o.weather) parts.push(`weather ${o.weather>0?'+':''}${o.weather}`);
       if(o.coach) parts.push(`coach ${o.coach>0?'+':''}${o.coach}`);
       const adj=parts.length?` (${parts.join(', ')})`:'';
@@ -706,6 +834,8 @@ async function loadOutrights(manual){
 }
 
 let currentSquad=[];
+let currentFormData={};  // id -> {formScore, eloImpact, matched}
+
 async function loadSquad(){
   const team=$('#lineupTeam').value;
   const r=await fetch('/api/squad?team='+encodeURIComponent(team)); const d=await r.json();
@@ -713,8 +843,44 @@ async function loadSquad(){
   currentSquad=d.players;
   $('#baseElo').textContent=d.baseElo;
   $('#effElo').textContent=d.effectiveElo;
+  // Load form data (non-blocking — don't await so squad renders immediately)
+  loadFormForTeam(team);
   renderSquad();
   loadCoach(team);
+}
+
+async function loadFormForTeam(team){
+  try{
+    const fd=await (await fetch('/api/form?team='+encodeURIComponent(team))).json();
+    if(fd.error) return;
+    currentFormData={};
+    (fd.players||[]).forEach(p=>{ currentFormData[p.id]=p; });
+    const delta=fd.formDelta||0;
+    $('#formDelta').textContent=(delta>=0?'+':'')+delta.toFixed(1);
+    $('#formDelta').style.color=delta>0?'var(--acc)':delta<0?'#f85149':'var(--mut)';
+    if(!fd.hasCacheData){
+      $('#formStatus').textContent='no form data — click ↻ Fetch player form';
+    } else {
+      $('#formStatus').textContent='';
+    }
+    renderSquad(); // re-render with form columns filled
+  }catch(e){ /* form data optional */ }
+}
+
+async function refreshForm(){
+  $('#formRefreshBtn').disabled=true;
+  $('#formStatus').textContent='fetching from ESPN…';
+  try{
+    const r=await fetch('/api/refresh_form',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d=await r.json();
+    if(d.ok){
+      $('#formStatus').textContent=`✓ ${d.matchesScanned} matches · ${d.teamsWithData} teams · ${d.ts}`;
+      loadFormForTeam($('#lineupTeam').value);
+    } else {
+      $('#formStatus').textContent='Error: '+(d.error||'fetch failed');
+    }
+  }catch(e){ $('#formStatus').textContent='Error: '+e.message; }
+  finally{ $('#formRefreshBtn').disabled=false; }
 }
 let _coaches=null;
 async function loadCoach(team){
@@ -734,12 +900,28 @@ async function saveCoach(){
 function renderSquad(){
   $('#squadBody').innerHTML=currentSquad.map(p=>{
     const out=p.available===false;
+    const fd=currentFormData[p.id];
+    const hasForm=fd&&fd.matched;
+    const formScore=fd?fd.formScore:null;
+    const eloImpact=fd?fd.eloImpact:null;
+    const formColor=hasForm
+      ? (formScore>7?'var(--acc)':formScore<6?'#f85149':'var(--mut)')
+      : 'var(--mut)';
+    const formCell=hasForm
+      ? `<span style="color:${formColor};font-weight:600">${formScore.toFixed(1)}</span>`
+      : `<span class="muted" title="no data">–</span>`;
+    const eloSign=eloImpact>0?'+':'';
+    const adjCell=hasForm
+      ? `<span style="color:${formColor}">${eloSign}${eloImpact}</span>`
+      : `<span class="muted">–</span>`;
     return `<tr style="${out?'opacity:0.5':''}">
       <td><input type="checkbox" data-id="${p.id}" ${p.starter&&!out?'checked':''} ${out?'disabled':''}></td>
       <td class="num muted">${p.number??''}</td>
       <td>${p.name} ${out?'<span style="color:#f85149;font-size:11px">⛔ OUT</span>':''}</td>
       <td><span class="pill">${p.pos}</span></td>
       <td class="num"><input type="number" data-rid="${p.id}" value="${p.rating}" min="1" max="99"></td>
+      <td class="num">${formCell}</td>
+      <td class="num">${adjCell}</td>
       <td><label style="font-size:11px"><input type="checkbox" data-avail="${p.id}" ${out?'':'checked'} onchange="renderSquadToggle(${p.id},this.checked)"> fit</label></td></tr>`;
   }).join('');
 }
