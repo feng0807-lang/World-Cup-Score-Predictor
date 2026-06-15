@@ -74,6 +74,7 @@
   <div class="tab" data-tab="lineup">Starting XI Editor</div>
   <div class="tab" data-tab="history">History &amp; Backtrack</div>
   <div class="tab" data-tab="simfix">Fixture Forecast</div>
+  <div class="tab" data-tab="bets">My Bets</div>
 </div>
 
 <main>
@@ -134,6 +135,33 @@
       </table>
       <p class="note">"Fair" = zero-margin odds implied by the model. The line nearest
         50/50 is the model's pick'em handicap.</p>
+    </div>
+
+    <!-- IN-PLAY MODE -->
+    <div class="card" id="liveCard" style="display:none">
+      <h2>📍 In-play mode</h2>
+      <div class="row" style="font-size:13px;margin-bottom:10px">
+        <span class="muted">Current score:</span>
+        <input id="liveH" type="number" min="0" max="20" value="0" style="width:52px" oninput="calcLive()">
+        <span class="muted">–</span>
+        <input id="liveA" type="number" min="0" max="20" value="0" style="width:52px" oninput="calcLive()">
+        <span class="muted" style="margin-left:12px">Minute:</span>
+        <input id="liveMin" type="range" min="0" max="95" value="45" oninput="liveMinLbl();calcLive()" style="width:120px">
+        <span id="liveMinVal" class="muted">45'</span>
+      </div>
+      <div class="row" style="font-size:13px;margin-bottom:12px">
+        <span class="muted">Subs impact:</span>
+        <label><span id="liveHomeName">Home</span>
+          <input id="liveSubH" type="number" step="5" value="0" style="width:60px"> %</label>
+        <label><span id="liveAwayName">Away</span>
+          <input id="liveSubA" type="number" step="5" value="0" style="width:60px"> %</label>
+        <button class="ghost" onclick="calcLive()">↻ Recalc</button>
+        <span class="muted" style="font-size:12px">+% = attacking sub, −% = defensive / preserve lead</span>
+      </div>
+      <div id="liveWDL" class="grid3" style="margin-bottom:14px"></div>
+      <table><thead><tr><th>Final score</th><th class="num">Probability</th><th></th></tr></thead>
+        <tbody id="liveScoreBody"></tbody></table>
+      <div id="liveLambdaInfo" style="margin-top:10px;font-size:12px;color:var(--mut)"></div>
     </div>
 
     <!-- MARKET & VALUE -->
@@ -370,11 +398,65 @@
       </table>
     </div>
   </section>
+
+  <!-- MY BETS -->
+  <section id="tab-bets" class="hidden">
+    <div class="card">
+      <h2>Position stress tester</h2>
+      <p class="note">Run a prediction first (Match Predictor tab), then optionally enable in-play mode. The scoreline distribution is used to compute settlement probability and EV for each position.</p>
+      <div id="betModelInfo" class="muted" style="font-size:13px;margin-bottom:12px">No prediction loaded — go to Match Predictor first.</div>
+
+      <!-- ADD BET FORM -->
+      <div style="background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:16px">
+        <div class="row" style="font-size:13px;flex-wrap:wrap;gap:8px">
+          <select id="betType" onchange="betTypeChange()">
+            <option value="ah">Asian Handicap</option>
+            <option value="ou">Over / Under</option>
+            <option value="cs">Correct Score</option>
+          </select>
+          <span id="betAHFields" class="row" style="gap:8px">
+            <select id="betSide"><option value="home">Home</option><option value="away">Away</option></select>
+            <label>Line <input id="betLine" type="number" step="0.25" value="-0.25" style="width:72px"></label>
+          </span>
+          <span id="betOUFields" class="row hidden" style="gap:8px">
+            <select id="betDir"><option value="over">Over</option><option value="under">Under</option></select>
+            <label>Total <input id="betTotal" type="number" step="0.5" value="2.5" style="width:64px"></label>
+          </span>
+          <span id="betCSFields" class="row hidden" style="gap:8px">
+            <label>Score <input id="betCS" placeholder="2-1" style="width:64px"></label>
+          </span>
+          <select id="betOddsFormat">
+            <option value="malay">Malay odds</option>
+            <option value="decimal">Decimal odds</option>
+          </select>
+          <label>Odds <input id="betOdds" type="number" step="0.05" value="0.90" style="width:72px"></label>
+          <label>Stake <input id="betStake" type="number" step="10" value="100" style="width:72px"></label>
+          <select id="betScope">
+            <option value="full">Full time</option>
+            <option value="remaining">Remaining only</option>
+          </select>
+          <button onclick="addBet()">+ Add position</button>
+        </div>
+      </div>
+
+      <div id="betsEmpty" class="muted" style="font-size:13px">No positions yet.</div>
+      <div id="betsList"></div>
+
+      <div id="betsSummary" class="hidden" style="margin-top:16px;padding:14px;background:#0d1117;border:1px solid var(--line);border-radius:8px">
+        <div style="font-size:12px;color:var(--mut);margin-bottom:8px">COMBINED</div>
+        <div id="betsSummaryInner" class="row" style="gap:20px;font-size:13px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+  </section>
 </main>
 
 <script>
 const $ = s => document.querySelector(s);
 let teams = [];
+let currentPrediction = null;   // last /api/predict response
+let currentDistribution = [];   // [{h,a,p}] full-match Poisson grid
+let liveDistribution = [];      // [{h,a,p}] in-play adjusted grid
+let betPositions = [];          // [{type,side,line,...}]
 
 async function init(){
   const r = await fetch('/api/teams'); const d = await r.json();
@@ -408,7 +490,7 @@ async function init(){
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   t.classList.add('active');
-  ['match','tourney','standings','lineup','history','simfix'].forEach(name=>
+  ['match','tourney','standings','lineup','history','simfix','bets'].forEach(name=>
     $('#tab-'+name).classList.toggle('hidden', name!==t.dataset.tab));
   if(t.dataset.tab==='history'){ loadHistory(); loadLiveRatings(); }
   if(t.dataset.tab==='standings') loadStandings();
@@ -567,6 +649,19 @@ async function predict(){
   $('#scoreBody').innerHTML=d.scorelines.map(s=>
     `<tr><td>${s.score}</td><td class="num">${(s.p*100).toFixed(1)}%</td>
      <td><span class="bar" style="width:${(s.p/max*120).toFixed(0)}px"></span></td></tr>`).join('');
+
+  // store for in-play + bets
+  currentPrediction = d;
+  currentDistribution = buildGrid(d.expected[0], d.expected[1], 0, 0);
+  liveDistribution = currentDistribution;
+  // init live card
+  $('#liveH').value=0; $('#liveA').value=0; $('#liveMin').value=45;
+  $('#liveSubH').value=0; $('#liveSubA').value=0;
+  liveMinLbl();
+  $('#liveHomeName').textContent=d.home; $('#liveAwayName').textContent=d.away;
+  $('#liveCard').style.display='';
+  calcLive();
+  updateBetModelInfo();
 }
 
 function blendLbl(){
@@ -949,6 +1044,220 @@ async function saveSquad(){
   $('#saveStatus').textContent='✓ saved — effective Elo now '+d.effectiveElo;
   init();  // refresh team Elo lists everywhere
 }
+
+// ── Poisson math (client-side, used by in-play + bets) ───────────────────────
+function poissonPmf(k, lam) {
+  let v = Math.exp(-lam);
+  for (let i = 1; i <= k; i++) v *= lam / i;
+  return v;
+}
+
+function buildGrid(lh, la, curH, curA, maxAdd=7) {
+  const rows = [];
+  for (let h = 0; h <= maxAdd; h++)
+    for (let a = 0; a <= maxAdd; a++)
+      rows.push({ h: curH + h, a: curA + a, p: poissonPmf(h, lh) * poissonPmf(a, la) });
+  const tot = rows.reduce((s, r) => s + r.p, 0) || 1;
+  return rows.map(r => ({ ...r, p: r.p / tot }));
+}
+
+function malayProfit(odds) { return odds >= 0 ? odds : 1 / Math.abs(odds); }
+
+function lineParts(line) {
+  const frac = Math.abs(Math.round(line * 4) % 2);
+  return frac === 1 ? [line - 0.25, line + 0.25] : [line];
+}
+
+function settleOutcome(parts) {
+  const wins = parts.filter(x => x === 'W').length;
+  const pushes = parts.filter(x => x === 'P').length;
+  const losses = parts.filter(x => x === 'L').length;
+  if (wins === parts.length) return 'fullWin';
+  if (losses === parts.length) return 'fullLoss';
+  if (pushes === parts.length) return 'push';
+  if (wins) return 'halfWin';
+  return 'halfLoss';
+}
+
+function settleAH(finalH, finalA, side, line, scope, scoreH, scoreA) {
+  const h = scope === 'remaining' ? finalH - scoreH : finalH;
+  const a = scope === 'remaining' ? finalA - scoreA : finalA;
+  const margin = side === 'home' ? h - a : a - h;
+  return settleOutcome(lineParts(line).map(p => margin + p > 0 ? 'W' : margin + p === 0 ? 'P' : 'L'));
+}
+
+function settleOU(finalH, finalA, dir, line) {
+  const total = finalH + finalA;
+  return settleOutcome(lineParts(line).map(p =>
+    total === p ? 'P' : dir === 'over' ? (total > p ? 'W' : 'L') : (total < p ? 'W' : 'L')));
+}
+
+function aggSettlement(dist, resolver) {
+  const s = { fullWin: 0, halfWin: 0, push: 0, halfLoss: 0, fullLoss: 0 };
+  dist.forEach(r => { s[resolver(r)] += r.p; });
+  return s;
+}
+
+function settlementBar(s, odds, stake) {
+  const wp = malayProfit(odds);
+  const ev = (s.fullWin * wp + s.halfWin * wp / 2 - s.halfLoss / 2 - s.fullLoss) * stake;
+  const pct = v => (v * 100).toFixed(1) + '%';
+  const segs = [
+    ['全赢', s.fullWin, '#3fb950'],
+    ['赢半', s.halfWin, '#7ee787'],
+    ['走盘', s.push, '#8b949e'],
+    ['输半', s.halfLoss, '#e3a65a'],
+    ['全输', s.fullLoss, '#f85149'],
+  ];
+  const bar = segs.map(([lbl, v, col]) => v > 0.005
+    ? `<span style="display:inline-block;height:10px;width:${(v*100).toFixed(1)}%;background:${col};vertical-align:middle" title="${lbl} ${pct(v)}"></span>`
+    : '').join('');
+  const legend = segs.map(([lbl, v, col]) =>
+    `<span style="color:${col};font-size:11px">${lbl} ${pct(v)}</span>`).join(' ');
+  const evColor = ev >= 0 ? 'var(--acc)' : '#f85149';
+  return `<div style="border-radius:4px;overflow:hidden;margin:4px 0">${bar}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:2px">${legend}</div>
+          <div style="font-size:12px">EV: <span style="color:${evColor};font-weight:600">${ev>=0?'+':''}${ev.toFixed(2)}</span> on stake ${stake}</div>`;
+}
+
+// ── In-play mode ─────────────────────────────────────────────────────────────
+function liveMinLbl() {
+  const m = +$('#liveMin').value;
+  $('#liveMinVal').textContent = m + "'";
+}
+
+function calcLive() {
+  if (!currentPrediction) return;
+  const lh0 = currentPrediction.expected[0];
+  const la0 = currentPrediction.expected[1];
+  const curH = +$('#liveH').value || 0;
+  const curA = +$('#liveA').value || 0;
+  const min = +$('#liveMin').value || 0;
+  const subH = +$('#liveSubH').value || 0;
+  const subA = +$('#liveSubA').value || 0;
+  const remain = Math.max(0, (90 - min) / 90);
+  const lh = Math.max(0, lh0 * remain * Math.min(Math.max(1 + subH / 100, 0.3), 2.0));
+  const la = Math.max(0, la0 * remain * Math.min(Math.max(1 + subA / 100, 0.3), 2.0));
+  liveDistribution = buildGrid(lh, la, curH, curA);
+  // win/draw/loss from remaining
+  let pw = 0, pd = 0, pa = 0;
+  liveDistribution.forEach(r => {
+    if (r.h > r.a) pw += r.p;
+    else if (r.h === r.a) pd += r.p;
+    else pa += r.p;
+  });
+  const pct = v => (v * 100).toFixed(1) + '%';
+  $('#liveWDL').innerHTML = `
+    <div><div class="muted">${currentPrediction.home} win</div><div class="winp starter">${pct(pw)}</div></div>
+    <div><div class="muted">Draw</div><div class="winp">${pct(pd)}</div></div>
+    <div><div class="muted">${currentPrediction.away} win</div><div class="winp">${pct(pa)}</div></div>`;
+  const top = [...liveDistribution].sort((a, b) => b.p - a.p).slice(0, 8);
+  const maxP = top[0]?.p || 1;
+  $('#liveScoreBody').innerHTML = top.map(r =>
+    `<tr><td>${r.h}–${r.a}</td><td class="num">${pct(r.p)}</td>
+     <td><span class="bar" style="width:${(r.p/maxP*120).toFixed(0)}px"></span></td></tr>`).join('');
+  $('#liveLambdaInfo').textContent =
+    `Remaining λ: ${currentPrediction.home} ${lh.toFixed(3)}  |  ${currentPrediction.away} ${la.toFixed(3)}  ` +
+    `(${(remain*100).toFixed(0)}% time left, subs ${subH>=0?'+':''}${subH}% / ${subA>=0?'+':''}${subA}%)`;
+  if (betPositions.length) renderBets();
+}
+
+// ── Bet / position stress tester ─────────────────────────────────────────────
+function betTypeChange() {
+  const t = $('#betType').value;
+  $('#betAHFields').classList.toggle('hidden', t !== 'ah');
+  $('#betOUFields').classList.toggle('hidden', t !== 'ou');
+  $('#betCSFields').classList.toggle('hidden', t !== 'cs');
+}
+
+function updateBetModelInfo() {
+  if (!currentPrediction) return;
+  const isLive = +$('#liveMin').value > 0 || +$('#liveH').value > 0 || +$('#liveA').value > 0;
+  $('#betModelInfo').textContent = isLive
+    ? `Using in-play distribution: ${currentPrediction.home} ${$('#liveH').value}–${$('#liveA').value} ${currentPrediction.away}, min ${$('#liveMin').value}'`
+    : `Using full-match distribution: ${currentPrediction.home} vs ${currentPrediction.away}`;
+}
+
+function addBet() {
+  const dist = liveDistribution.length ? liveDistribution : currentDistribution;
+  if (!dist.length) { alert('Run a prediction first (Match Predictor tab).'); return; }
+  const type = $('#betType').value;
+  const oddsRaw = +$('#betOdds').value;
+  const fmt = $('#betOddsFormat').value;
+  const odds = fmt === 'decimal' ? oddsRaw - 1 : oddsRaw; // store as Malay internally
+  const stake = +$('#betStake').value || 100;
+  const scope = $('#betScope').value;
+  const curH = +$('#liveH').value || 0;
+  const curA = +$('#liveA').value || 0;
+  let label = '';
+  let resolver;
+  if (type === 'ah') {
+    const side = $('#betSide').value;
+    const line = +$('#betLine').value;
+    label = `AH ${currentPrediction[side==='home'?'home':'away']} ${line>=0?'+':''}${line}`;
+    resolver = r => settleAH(r.h, r.a, side, line, scope, curH, curA);
+  } else if (type === 'ou') {
+    const dir = $('#betDir').value;
+    const total = +$('#betTotal').value;
+    label = `${dir==='over'?'Over':'Under'} ${total}`;
+    resolver = r => settleOU(r.h, r.a, dir, total);
+  } else {
+    const cs = $('#betCS').value.trim();
+    const [sh, sa] = cs.split('-').map(Number);
+    if (isNaN(sh) || isNaN(sa)) { alert('Enter score as H-A e.g. 2-1'); return; }
+    label = `Correct score ${sh}-${sa}`;
+    resolver = r => r.h === sh && r.a === sa ? 'fullWin' : 'fullLoss';
+  }
+  betPositions.push({ label, odds, stake, scope, resolver, curH, curA, oddsRaw, fmt });
+  renderBets();
+}
+
+function removeBet(idx) {
+  betPositions.splice(idx, 1);
+  renderBets();
+}
+
+function renderBets() {
+  const dist = liveDistribution.length ? liveDistribution : currentDistribution;
+  if (!betPositions.length) {
+    $('#betsEmpty').style.display = '';
+    $('#betsList').innerHTML = '';
+    $('#betsSummary').classList.add('hidden');
+    return;
+  }
+  $('#betsEmpty').style.display = 'none';
+  let totalEV = 0;
+  let pAllWin = 1; // assume independence (approximation)
+  let pAllLoss = 1;
+  $('#betsList').innerHTML = betPositions.map((b, i) => {
+    const s = aggSettlement(dist, b.resolver);
+    const wp = malayProfit(b.odds);
+    const ev = (s.fullWin * wp + s.halfWin * wp / 2 - s.halfLoss / 2 - s.fullLoss) * b.stake;
+    totalEV += ev;
+    pAllWin *= (s.fullWin + s.halfWin * 0.5);
+    pAllLoss *= (s.fullLoss + s.halfLoss * 0.5);
+    const bar = settlementBar(s, b.odds, b.stake);
+    const oddsDisplay = b.fmt === 'decimal' ? `${b.oddsRaw} dec` : `${b.oddsRaw} ML`;
+    return `<div style="padding:12px;border:1px solid var(--line);border-radius:8px;margin-bottom:10px">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <span style="font-weight:600">${b.label}</span>
+        <span class="muted" style="font-size:12px">${oddsDisplay} · stake ${b.stake}</span>
+        <button class="ghost" style="padding:3px 8px;font-size:12px" onclick="removeBet(${i})">✕ Remove</button>
+      </div>
+      ${bar}
+    </div>`;
+  }).join('');
+
+  $('#betsSummary').classList.remove('hidden');
+  const evColor = totalEV >= 0 ? 'var(--acc)' : '#f85149';
+  $('#betsSummaryInner').innerHTML =
+    `<span>Total EV: <strong style="color:${evColor}">${totalEV>=0?'+':''}${totalEV.toFixed(2)}</strong></span>` +
+    `<span class="muted">P(all win): ${(pAllWin*100).toFixed(1)}%</span>` +
+    `<span class="muted">P(all loss): ${(pAllLoss*100).toFixed(1)}%</span>` +
+    `<span class="muted">${betPositions.length} position${betPositions.length>1?'s':''}</span>`;
+  updateBetModelInfo();
+}
+
 init();
 </script>
 </body>
