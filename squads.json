@@ -10089,7 +10089,7 @@
         "name": "Khojiakbar Alijonov",
         "pos": "DEF",
         "rating": 63,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10098,7 +10098,7 @@
         "name": "Farrukh Sayfiev",
         "pos": "DEF",
         "rating": 62,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10116,7 +10116,7 @@
         "name": "Akmal Mozgovoy",
         "pos": "MID",
         "rating": 61,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10143,7 +10143,7 @@
         "name": "Odiljon Hamrobekov",
         "pos": "MID",
         "rating": 64,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10152,7 +10152,7 @@
         "name": "Jaloliddin Masharipov",
         "pos": "MID",
         "rating": 64,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10161,7 +10161,7 @@
         "name": "Oston Urunov",
         "pos": "MID",
         "rating": 62,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10179,7 +10179,7 @@
         "name": "Sherzod Nasrullaev",
         "pos": "DEF",
         "rating": 57,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10224,7 +10224,7 @@
         "name": "Abdulla Abdullaev",
         "pos": "DEF",
         "rating": 60,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10242,7 +10242,7 @@
         "name": "Azizbek Amonov",
         "pos": "FWD",
         "rating": 56,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10251,7 +10251,7 @@
         "name": "Igor Sergeev",
         "pos": "FWD",
         "rating": 58,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10260,7 +10260,7 @@
         "name": "Abbosbek Fayzullaev",
         "pos": "MID",
         "rating": 59,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10278,7 +10278,7 @@
         "name": "Bekhruz Karimov",
         "pos": "DEF",
         "rating": 57,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10311,7 +10311,7 @@
         "name": "David Ospina",
         "pos": "GK",
         "rating": 80,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10338,7 +10338,7 @@
         "name": "Santiago Arias",
         "pos": "DEF",
         "rating": 81,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10347,7 +10347,7 @@
         "name": "Kevin Castaño",
         "pos": "MID",
         "rating": 81,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10356,7 +10356,7 @@
         "name": "Richard Ríos",
         "pos": "MID",
         "rating": 81,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10374,7 +10374,7 @@
         "name": "Jorge Carrascal",
         "pos": "MID",
         "rating": 82,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10383,7 +10383,7 @@
         "name": "Jhon Córdoba",
         "pos": "FWD",
         "rating": 79,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10392,7 +10392,7 @@
         "name": "James Rodríguez",
         "pos": "MID",
         "rating": 79,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10401,7 +10401,7 @@
         "name": "Jhon Arias",
         "pos": "MID",
         "rating": 81,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10410,7 +10410,7 @@
         "name": "Camilo Vargas",
         "pos": "GK",
         "rating": 79,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10428,7 +10428,7 @@
         "name": "Gustavo Puerta",
         "pos": "DEF",
         "rating": 76,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10446,7 +10446,7 @@
         "name": "Jefferson Lerma",
         "pos": "MID",
         "rating": 78,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10455,7 +10455,7 @@
         "name": "Johan Mojica",
         "pos": "DEF",
         "rating": 75,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10464,7 +10464,7 @@
         "name": "Willer Ditta",
         "pos": "DEF",
         "rating": 79,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10491,7 +10491,7 @@
         "name": "Jaminton Campaz",
         "pos": "FWD",
         "rating": 79,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -10509,7 +10509,7 @@
         "name": "Davinson Sánchez",
         "pos": "DEF",
         "rating": 77,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -10527,7 +10527,7 @@
         "name": "Luis Suárez",
         "pos": "FWD",
         "rating": 78,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
