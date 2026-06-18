@@ -52,9 +52,21 @@ def _lineup_delta(team: str) -> float:
     return 0.0
 
 
+def _base_correction(team: str) -> float:
+    """Bridge between the encrypted model's trained Elo and our calibrated base_elo.
+    The trained model was built from historical data that systematically over-rates
+    CONMEBOL/CAF/AFC teams and under-rates some European sides due to confederation
+    strength differences in qualifying. Adding squads_base - trained_elo as a delta
+    makes the effective Elo align with our hand-calibrated ratings.
+    """
+    if team in SQUADS:
+        return SQUADS[team]["base_elo"] - secure.trained_elo(team)
+    return 0.0
+
+
 def _strength_delta(team: str) -> float:
-    """Combined non-weather strength shift: lineup + live + coach + sim + form."""
-    return (_lineup_delta(team) + live_mod.get_delta(team)
+    """Combined non-weather strength shift: base_correction + lineup + live + coach + sim + form."""
+    return (_base_correction(team) + _lineup_delta(team) + live_mod.get_delta(team)
             + coach_mod.get_delta(team) + sim_mod.get_delta(team)
             + form_mod.team_form_delta(SQUADS.get(team, {}), team))
 
@@ -65,7 +77,9 @@ def _all_deltas() -> dict[str, float]:
 
 def _odds_payload(home: str, away: str, blend: float | None):
     """Model probs vs market consensus, value edges, and optional blend."""
-    p = predict_match(home, away, _lineup_delta(home), _lineup_delta(away))
+    p = predict_match(home, away,
+                      _base_correction(home) + _lineup_delta(home),
+                      _base_correction(away) + _lineup_delta(away))
     model = {"home": p.p_home_win, "draw": p.p_draw, "away": p.p_away_win}
     market = odds_mod.get_market(home, away)
 
@@ -186,6 +200,7 @@ class Handler(BaseHTTPRequestHandler):
             home, away = q.get("home", [""])[0], q.get("away", [""])[0]
             if not home or not away:
                 return self._send({"error": "home and away required"}, 400)
+            corr_h, corr_a = _base_correction(home), _base_correction(away)
             lin_h, lin_a = _lineup_delta(home), _lineup_delta(away)
             live_h, live_a = live_mod.get_delta(home), live_mod.get_delta(away)
             coach_h, coach_a = coach_mod.get_delta(home), coach_mod.get_delta(away)
@@ -199,17 +214,17 @@ class Handler(BaseHTTPRequestHandler):
                 assess = climate_mod.climate_assessment(home, away, weather)
                 wx_h, wx_a = assess["deltaHome"], assess["deltaAway"]
                 climate_info = {"venue": venue, "weather": weather, "assessment": assess}
-            dh = lin_h + live_h + wx_h + coach_h + frm_h
-            da = lin_a + live_a + wx_a + coach_a + frm_a
+            dh = corr_h + lin_h + live_h + wx_h + coach_h + frm_h
+            da = corr_a + lin_a + live_a + wx_a + coach_a + frm_a
             p = predict_match(home, away, dh, da)
             base_h, base_a = secure.trained_elo(home), secure.trained_elo(away)
             breakdown = {
-                "home": {"base": round(base_h, 1), "lineup": round(lin_h, 1),
+                "home": {"base": round(base_h + corr_h, 1), "lineup": round(lin_h, 1),
                          "liveForm": round(live_h, 1), "weather": round(wx_h, 1),
                          "coach": round(coach_h, 1), "coachName": coach_mod.get(home)["name"],
                          "playerForm": round(frm_h, 1),
                          "effective": round(base_h + dh, 1)},
-                "away": {"base": round(base_a, 1), "lineup": round(lin_a, 1),
+                "away": {"base": round(base_a + corr_a, 1), "lineup": round(lin_a, 1),
                          "liveForm": round(live_a, 1), "weather": round(wx_a, 1),
                          "coach": round(coach_a, 1), "coachName": coach_mod.get(away)["name"],
                          "playerForm": round(frm_a, 1),
