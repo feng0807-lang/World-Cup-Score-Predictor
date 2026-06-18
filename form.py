@@ -322,15 +322,15 @@ def meta() -> dict:
 # ----------------------------------------------------------------- live --
 
 def live_matches(date_str: str | None = None) -> list[dict]:
-    """Return today's WC matches (live, pre, or recent) from ESPN scoreboard."""
+    """Return WC matches across a 3-day window centred on today UTC.
+
+    Queries yesterday + today + tomorrow so matches near midnight boundaries
+    (common for UTC+8 viewers) are never missed.  A specific date_str still
+    restricts the query to that single date.
+    """
     import re as _re
-    if date_str is None:
-        date_str = datetime.utcnow().strftime("%Y%m%d")
-    sess = _session()
-    r = sess.get(f"{ESPN_BOARD}?dates={date_str}", timeout=10)
-    r.raise_for_status()
-    out = []
-    for ev in r.json().get("events", []):
+
+    def _parse_event(ev: dict) -> dict:
         status = ev.get("status", {})
         state = status.get("type", {}).get("state", "pre")
         comp = (ev.get("competitions") or [{}])[0]
@@ -338,10 +338,10 @@ def live_matches(date_str: str | None = None) -> list[dict]:
         home = next((c for c in competitors if c.get("homeAway") == "home"), {})
         away = next((c for c in competitors if c.get("homeAway") == "away"), {})
         clock = status.get("displayClock", "0")
-        m = _re.search(r"\d+", str(clock))
-        minute = int(m.group()) if m else 0
-        out.append({
-            "id": ev.get("id", ""),
+        mt = _re.search(r"\d+", str(clock))
+        minute = int(mt.group()) if mt else 0
+        return {
+            "id": str(ev.get("id", "")),
             "home": _canonical_team(home.get("team", {}).get("displayName", "")),
             "away": _canonical_team(away.get("team", {}).get("displayName", "")),
             "homeScore": int(home.get("score") or 0),
@@ -350,7 +350,33 @@ def live_matches(date_str: str | None = None) -> list[dict]:
             "period": status.get("period", 1),
             "state": state,
             "statusText": status.get("type", {}).get("shortDetail", ""),
-        })
+            "date": status.get("type", {}).get("description", ""),
+        }
+
+    sess = _session()
+    if date_str:
+        dates = [date_str]
+    else:
+        now = datetime.utcnow()
+        dates = [
+            (now - timedelta(days=1)).strftime("%Y%m%d"),
+            now.strftime("%Y%m%d"),
+            (now + timedelta(days=1)).strftime("%Y%m%d"),
+        ]
+
+    seen: set[str] = set()
+    out: list[dict] = []
+    for d in dates:
+        try:
+            r = sess.get(f"{ESPN_BOARD}?dates={d}", timeout=10)
+            r.raise_for_status()
+            for ev in r.json().get("events", []):
+                eid = str(ev.get("id", ""))
+                if eid and eid not in seen:
+                    seen.add(eid)
+                    out.append(_parse_event(ev))
+        except Exception:
+            continue
     return out
 
 
