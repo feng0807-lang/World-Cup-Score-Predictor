@@ -26,3 +26,6 @@ __pycache__/
 _backup/
 *.tmp
 .DS_Store
+
+# temp server logs
+_srv_*.log
