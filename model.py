@@ -11,9 +11,24 @@ engine. This module just exposes a stable interface to the rest of the app.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import secure
+
+# --- Calibration: anchor supremacy to our calibrated Elo ----------------------
+# The encrypted engine's trained Dixon-Coles attack/defense coefficients inflate
+# CONMEBOL/CAF/AFC sides and under-rate some UEFA teams (they were fit on
+# qualifying results across confederations of very different strength). That bias
+# lives in the *supremacy* (lambda_home - lambda_away), not the total goals.
+#
+# So we keep the encrypted model's TOTAL-goals estimate (its form/GBM/matchup
+# intelligence) but replace most of the supremacy with one derived from our
+# hand-calibrated team Elo (squads.json base + lineup/live/coach/sim/form). The
+# rating->goals slope is the value backtested in backtest.py.
+GOALS_PER_ELO = 0.0036          # goals of supremacy per Elo point of difference
+SUPREMACY_ELO_WEIGHT = 0.85     # 85% calibrated-Elo supremacy, 15% encrypted
+_LAMBDA_CAP = 6.5
 
 
 @dataclass
@@ -52,4 +67,71 @@ def predict_match(home: str, away: str, delta_home: float = 0.0,
         lambda_home=g["lambda_home"], lambda_away=g["lambda_away"],
         p_home_win=g["p_home_win"], p_draw=g["p_draw"], p_away_win=g["p_away_win"],
         scoreline_probs=g["grid"],
+    )
+
+
+# --- Calibrated-Elo prediction path ------------------------------------------
+
+def _reanchor(lh_e: float, la_e: float, elo_home: float, elo_away: float) -> tuple[float, float]:
+    """Recombine the encrypted total-goals with calibrated-Elo supremacy."""
+    total = lh_e + la_e
+    sup = (SUPREMACY_ELO_WEIGHT * GOALS_PER_ELO * (elo_home - elo_away)
+           + (1.0 - SUPREMACY_ELO_WEIGHT) * (lh_e - la_e))
+    lh = max(0.05, min((total + sup) / 2.0, _LAMBDA_CAP))
+    la = max(0.05, min((total - sup) / 2.0, _LAMBDA_CAP))
+    return lh, la
+
+
+def expected_goals_calibrated(home: str, away: str, elo_home: float, elo_away: float,
+                              neutral: bool = True) -> tuple[float, float]:
+    """Expected goals with supremacy anchored to calibrated Elo."""
+    lh_e, la_e = secure.expected_goals(home, away, 0.0, 0.0, neutral)
+    return _reanchor(lh_e, la_e, elo_home, elo_away)
+
+
+def _poisson_pmf(k: int, lam: float) -> float:
+    return math.exp(-lam) * lam ** k / math.factorial(k)
+
+
+def _tau(h: int, a: int, lh: float, la: float, rho: float) -> float:
+    if h == 0 and a == 0:
+        return 1 - lh * la * rho
+    if h == 0 and a == 1:
+        return 1 + lh * rho
+    if h == 1 and a == 0:
+        return 1 + la * rho
+    if h == 1 and a == 1:
+        return 1 - rho
+    return 1.0
+
+
+def predict_calibrated(home: str, away: str, elo_home: float, elo_away: float,
+                       neutral: bool = True) -> MatchPrediction:
+    """Full prediction with supremacy anchored to calibrated Elo, Dixon-Coles
+    low-score correction (rho) applied just like the encrypted engine."""
+    lh, la = expected_goals_calibrated(home, away, elo_home, elo_away, neutral)
+    rho = secure.rho()
+    mg = secure.max_goals()
+    ph = [_poisson_pmf(i, lh) for i in range(mg + 1)]
+    pa = [_poisson_pmf(j, la) for j in range(mg + 1)]
+    grid = {}
+    p_home = p_draw = p_away = 0.0
+    for i in range(mg + 1):
+        for j in range(mg + 1):
+            p = ph[i] * pa[j] * _tau(i, j, lh, la, rho)
+            if p < 0:
+                p = 0.0
+            grid[(i, j)] = p
+            if i > j:
+                p_home += p
+            elif i == j:
+                p_draw += p
+            else:
+                p_away += p
+    total = p_home + p_draw + p_away
+    grid = {k: v / total for k, v in grid.items()}
+    return MatchPrediction(
+        home=home, away=away, lambda_home=lh, lambda_away=la,
+        p_home_win=p_home / total, p_draw=p_draw / total, p_away_win=p_away / total,
+        scoreline_probs=grid,
     )

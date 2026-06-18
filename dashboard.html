@@ -645,6 +645,7 @@ async function predict(){
       if(o.playerForm) parts.push(`player form ${o.playerForm>0?'+':''}${o.playerForm}`);
       if(o.weather) parts.push(`weather ${o.weather>0?'+':''}${o.weather}`);
       if(o.coach) parts.push(`coach ${o.coach>0?'+':''}${o.coach}`);
+      if(o.sim) parts.push(`sim ${o.sim>0?'+':''}${o.sim}`);
       const adj=parts.length?` (${parts.join(', ')})`:'';
       return `${name}: base ${o.base} → <b>${o.effective}</b>${adj}`;
     };

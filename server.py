@@ -32,17 +32,11 @@ import handicap as handicap_mod
 import coach as coach_mod
 import sim_fixtures as sim_mod
 import form as form_mod
-from model import predict_match
+from model import predict_calibrated
 from tournament import run_simulation
 
 HERE = os.path.dirname(__file__)
 SQUADS = squads_mod.load_squads()
-
-
-def _elo_for(team: str) -> float:
-    if team in SQUADS:
-        return squads_mod.effective_elo(SQUADS[team])
-    return teams_mod.ELO.get(team, 1500)
 
 
 def _lineup_delta(team: str) -> float:
@@ -52,34 +46,42 @@ def _lineup_delta(team: str) -> float:
     return 0.0
 
 
-def _base_correction(team: str) -> float:
-    """Bridge between the encrypted model's trained Elo and our calibrated base_elo.
-    The trained model was built from historical data that systematically over-rates
-    CONMEBOL/CAF/AFC teams and under-rates some European sides due to confederation
-    strength differences in qualifying. Adding squads_base - trained_elo as a delta
-    makes the effective Elo align with our hand-calibrated ratings.
-    """
-    if team in SQUADS:
-        return SQUADS[team]["base_elo"] - secure.trained_elo(team)
-    return 0.0
+def _strength_delta(team: str, include_sim: bool = True) -> float:
+    """Combined non-weather strength shift vs base Elo: lineup + live + coach + form
+    (+ sim, unless excluded to avoid circular feedback in the fixture forecaster)."""
+    d = (_lineup_delta(team) + live_mod.get_delta(team) + coach_mod.get_delta(team)
+         + form_mod.team_form_delta(SQUADS.get(team, {}), team))
+    if include_sim:
+        d += sim_mod.get_delta(team)
+    return d
 
 
-def _strength_delta(team: str) -> float:
-    """Combined non-weather strength shift: base_correction + lineup + live + coach + sim + form."""
-    return (_base_correction(team) + _lineup_delta(team) + live_mod.get_delta(team)
-            + coach_mod.get_delta(team) + sim_mod.get_delta(team)
-            + form_mod.team_form_delta(SQUADS.get(team, {}), team))
+def _calibrated_elo(team: str, include_sim: bool = True) -> float:
+    """Team strength on our hand-calibrated scale: squads.json base_elo plus all
+    real-world adjustments. This is the single supremacy signal feeding the model
+    (the encrypted engine's trained Elo is confederation-biased and used only for
+    total-goals shape)."""
+    if team not in SQUADS:
+        return teams_mod.ELO.get(team, 1500.0)
+    return SQUADS[team]["base_elo"] + _strength_delta(team, include_sim)
 
 
 def _all_deltas() -> dict[str, float]:
     return {t: _strength_delta(t) for t in SQUADS}
 
 
+def _all_calibrated_elos() -> dict[str, float]:
+    return {t: _calibrated_elo(t) for t in SQUADS}
+
+
+def _elos_from_deltas(deltas: dict) -> dict[str, float]:
+    """Reconstruct calibrated Elos from a stored strength-delta snapshot."""
+    return {t: SQUADS[t]["base_elo"] + deltas.get(t, 0.0) for t in SQUADS}
+
+
 def _odds_payload(home: str, away: str, blend: float | None):
     """Model probs vs market consensus, value edges, and optional blend."""
-    p = predict_match(home, away,
-                      _base_correction(home) + _lineup_delta(home),
-                      _base_correction(away) + _lineup_delta(away))
+    p = predict_calibrated(home, away, _calibrated_elo(home), _calibrated_elo(away))
     model = {"home": p.p_home_win, "draw": p.p_draw, "away": p.p_away_win}
     market = odds_mod.get_market(home, away)
 
@@ -96,9 +98,9 @@ def _odds_payload(home: str, away: str, blend: float | None):
     return out
 
 
-def _sim_rows(runs: int, deltas: dict) -> list:
+def _sim_rows(runs: int, elos: dict) -> list:
     """Sorted per-team stage probabilities (R32..champion) as percentages."""
-    res = run_simulation(teams_mod.GROUPS, deltas, n=runs, seed=None)
+    res = run_simulation(teams_mod.GROUPS, elos, n=runs, seed=None)
     ranked = sorted(res.items(), key=lambda kv: kv[1]["champion"], reverse=True)
     return [{"team": t, **{k: round(v * 100, 1) for k, v in probs.items()}}
             for t, probs in ranked]
@@ -109,11 +111,11 @@ _sim_cache: dict = {}
 
 def _champion_probs(runs: int) -> dict[str, float]:
     """Monte-Carlo champion probability per team (cached by runs + lineup state)."""
-    deltas = _all_deltas()
-    key = (runs, tuple(sorted((t, round(d, 1)) for t, d in deltas.items())))
+    elos = _all_calibrated_elos()
+    key = (runs, tuple(sorted((t, round(e, 1)) for t, e in elos.items())))
     if _sim_cache.get("key") == key:
         return _sim_cache["champ"]
-    res = run_simulation(teams_mod.GROUPS, deltas, n=runs, seed=None)
+    res = run_simulation(teams_mod.GROUPS, elos, n=runs, seed=None)
     champ = {t: p["champion"] for t, p in res.items()}
     _sim_cache.clear()
     _sim_cache["key"] = key
@@ -200,12 +202,14 @@ class Handler(BaseHTTPRequestHandler):
             home, away = q.get("home", [""])[0], q.get("away", [""])[0]
             if not home or not away:
                 return self._send({"error": "home and away required"}, 400)
-            corr_h, corr_a = _base_correction(home), _base_correction(away)
+            base_h = SQUADS[home]["base_elo"] if home in SQUADS else teams_mod.ELO.get(home, 1500.0)
+            base_a = SQUADS[away]["base_elo"] if away in SQUADS else teams_mod.ELO.get(away, 1500.0)
             lin_h, lin_a = _lineup_delta(home), _lineup_delta(away)
             live_h, live_a = live_mod.get_delta(home), live_mod.get_delta(away)
             coach_h, coach_a = coach_mod.get_delta(home), coach_mod.get_delta(away)
             frm_h = form_mod.team_form_delta(SQUADS.get(home, {}), home)
             frm_a = form_mod.team_form_delta(SQUADS.get(away, {}), away)
+            sim_h, sim_a = sim_mod.get_delta(home), sim_mod.get_delta(away)
             wx_h = wx_a = 0.0
             climate_info = None
             venue = q.get("venue", [""])[0]
@@ -214,25 +218,25 @@ class Handler(BaseHTTPRequestHandler):
                 assess = climate_mod.climate_assessment(home, away, weather)
                 wx_h, wx_a = assess["deltaHome"], assess["deltaAway"]
                 climate_info = {"venue": venue, "weather": weather, "assessment": assess}
-            dh = corr_h + lin_h + live_h + wx_h + coach_h + frm_h
-            da = corr_a + lin_a + live_a + wx_a + coach_a + frm_a
-            p = predict_match(home, away, dh, da)
-            base_h, base_a = secure.trained_elo(home), secure.trained_elo(away)
+            # Calibrated Elo drives supremacy (weather is a match-specific add-on).
+            elo_h = _calibrated_elo(home) + wx_h
+            elo_a = _calibrated_elo(away) + wx_a
+            p = predict_calibrated(home, away, elo_h, elo_a)
             breakdown = {
-                "home": {"base": round(base_h + corr_h, 1), "lineup": round(lin_h, 1),
+                "home": {"base": round(base_h, 1), "lineup": round(lin_h, 1),
                          "liveForm": round(live_h, 1), "weather": round(wx_h, 1),
                          "coach": round(coach_h, 1), "coachName": coach_mod.get(home)["name"],
-                         "playerForm": round(frm_h, 1),
-                         "effective": round(base_h + dh, 1)},
-                "away": {"base": round(base_a + corr_a, 1), "lineup": round(lin_a, 1),
+                         "playerForm": round(frm_h, 1), "sim": round(sim_h, 1),
+                         "effective": round(elo_h, 1)},
+                "away": {"base": round(base_a, 1), "lineup": round(lin_a, 1),
                          "liveForm": round(live_a, 1), "weather": round(wx_a, 1),
                          "coach": round(coach_a, 1), "coachName": coach_mod.get(away)["name"],
-                         "playerForm": round(frm_a, 1),
-                         "effective": round(base_a + da, 1)},
+                         "playerForm": round(frm_a, 1), "sim": round(sim_a, 1),
+                         "effective": round(elo_a, 1)},
             }
             return self._send({
                 "home": home, "away": away,
-                "eloHome": _elo_for(home), "eloAway": _elo_for(away),
+                "eloHome": round(elo_h, 1), "eloAway": round(elo_a, 1),
                 "expected": list(p.expected_score),
                 "mostLikely": list(p.most_likely_score),
                 "pHome": p.p_home_win, "pDraw": p.p_draw, "pAway": p.p_away_win,
@@ -244,7 +248,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/simulate":
             runs = int(q.get("runs", ["5000"])[0])
-            return self._send({"runs": runs, "rows": _sim_rows(runs, _all_deltas())})
+            return self._send({"runs": runs, "rows": _sim_rows(runs, _all_calibrated_elos())})
 
         if path == "/api/history":
             date = q.get("date", [None])[0]
@@ -310,9 +314,9 @@ class Handler(BaseHTTPRequestHandler):
             if not secure.available():
                 return self._send({"error": "model_unavailable", "modelAvailable": False}, 503)
             runs = int(q.get("runs", ["1000"])[0])
-            deltas = {t: _lineup_delta(t) + live_mod.get_delta(t) + coach_mod.get_delta(t)
-                      for t in SQUADS}
-            return self._send(sim_mod.simulate_all(runs, deltas))
+            # Calibrated Elos WITHOUT the sim delta (avoids circular feedback).
+            elos = {t: _calibrated_elo(t, include_sim=False) for t in SQUADS}
+            return self._send(sim_mod.simulate_all(runs, elos))
 
         if path == "/api/sim_meta":
             return self._send(sim_mod.meta())
@@ -382,7 +386,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send({"error": "model_unavailable"}, 503)
             neutral = bool(body.get("neutral", True))
             # Surprise: the model's pre-result prediction vs what happened.
-            p = predict_match(home, away, _strength_delta(home), _strength_delta(away))
+            p = predict_calibrated(home, away, _calibrated_elo(home), _calibrated_elo(away),
+                                   neutral=neutral)
             outcome = "home" if gh > ga else ("away" if ga > gh else "draw")
             p_out = {"home": p.p_home_win, "draw": p.p_draw, "away": p.p_away_win}[outcome]
             surprise = ("as expected" if p_out >= 0.5 else "plausible" if p_out >= 0.33
@@ -455,7 +460,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/savesim":
             runs = int(body.get("runs", 5000))
             deltas = _all_deltas()
-            rows = _sim_rows(runs, deltas)
+            rows = _sim_rows(runs, _all_calibrated_elos())
             snap = history_mod.save_simulation(rows, runs, deltas, body.get("label", ""))
             return self._send({"id": snap["id"], "label": snap["label"],
                                "topPick": snap["topPick"], "saved": True})
@@ -466,7 +471,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send({"error": "snapshot not found"}, 404)
             runs = int(body.get("runs", snap.get("runs", 5000)))
             deltas = snap.get("deltas", {})
-            rows = _sim_rows(runs, deltas)
+            rows = _sim_rows(runs, _elos_from_deltas(deltas))
             new = history_mod.save_simulation(
                 rows, runs, deltas, f"Recalc of {snap['id']} ({runs} runs)")
             return self._send({"id": new["id"], "label": new["label"],

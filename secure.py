@@ -113,6 +113,17 @@ def trained_elo(team, default=1500.0):
     return _params["elo"].get(team, default)
 
 
+def rho(default=0.0):
+    """Dixon-Coles low-score correlation parameter."""
+    _ensure_loaded()
+    return _params.get("rho", default)
+
+
+def max_goals(default=10):
+    _ensure_loaded()
+    return _params.get("max_goals", default)
+
+
 def model_info() -> dict:
     if not available():
         return {"available": False, "encrypted": True}

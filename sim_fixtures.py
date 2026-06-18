@@ -77,19 +77,23 @@ def reset() -> None:
         _save_store({})
 
 
-def simulate_all(n: int = 1000, strength_deltas: dict | None = None) -> dict:
+def simulate_all(n: int = 1000, elos: dict | None = None) -> dict:
     """Simulate all unplayed fixtures n times each.
 
-    strength_deltas: per-team combined Elo delta (lineup + live + coach).
-    If None, falls back to current live deltas only. Sim deltas are NOT
-    included here to avoid circular feedback.
+    elos: per-team calibrated Elo (squads.json base + lineup + live + coach +
+    form). Sim deltas are deliberately EXCLUDED by the caller to avoid circular
+    feedback. If None, falls back to the engine's trained Elo.
 
     Returns per-fixture stats and writes expected team Elo deltas to
     data/sim_ratings.json.
     """
-    from model import expected_goals
+    from model import expected_goals_calibrated
 
-    strength_deltas = strength_deltas or live_mod.all_deltas()
+    if not elos:
+        elos = {}
+
+    def _elo(team):
+        return elos.get(team) if elos.get(team) is not None else secure.trained_elo(team)
 
     played: set[str] = set()
     for r in live_mod.results():
@@ -105,12 +109,9 @@ def simulate_all(n: int = 1000, strength_deltas: dict | None = None) -> dict:
 
     for fix in unplayed:
         h, a = fix["home"], fix["away"]
-        dh = strength_deltas.get(h, 0.0)
-        da = strength_deltas.get(a, 0.0)
-        lam_h, lam_a = expected_goals(h, a, dh, da)
+        rh, ra = _elo(h), _elo(a)
+        lam_h, lam_a = expected_goals_calibrated(h, a, rh, ra)
 
-        rh = secure.trained_elo(h) + dh
-        ra = secure.trained_elo(a) + da
         exp_h = 1.0 / (1.0 + 10 ** (-(rh - ra) / 400.0))
 
         wins_h = draws = wins_a = 0

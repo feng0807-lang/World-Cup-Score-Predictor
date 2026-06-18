@@ -13,7 +13,7 @@ from __future__ import annotations
 import random
 from collections import defaultdict
 
-from model import expected_goals
+from model import expected_goals_calibrated
 import secure
 
 STAGES = ["round32", "round16", "quarter", "semi", "final", "champion"]
@@ -30,15 +30,20 @@ def _poisson_sample(lam: float, rng: random.Random) -> int:
             return k - 1
 
 
-def _build_cache(groups, deltas):
+def _build_cache(groups, elos):
     """Precompute expected goals for every team pairing once (the engine /
-    gradient-boosting call is far too slow to run inside the Monte Carlo loop)."""
+    gradient-boosting call is far too slow to run inside the Monte Carlo loop).
+
+    `elos` maps each team to its calibrated Elo (squads.json base + lineup/live/
+    coach/sim/form). Supremacy is anchored to it so confederation bias in the
+    trained engine doesn't distort the tournament."""
     all_teams = [t for teams in groups.values() for t in teams]
-    cache = {"_deltas": deltas}
+    cache = {"_elos": elos}
     for a in all_teams:
         for b in all_teams:
             if a != b and (a, b) not in cache:
-                cache[(a, b)] = expected_goals(a, b, deltas.get(a, 0.0), deltas.get(b, 0.0))
+                cache[(a, b)] = expected_goals_calibrated(
+                    a, b, elos.get(a, 1500.0), elos.get(b, 1500.0))
     return cache
 
 
@@ -53,7 +58,8 @@ def _knockout_winner(a, b, cache, rng):
         return a
     if gb > ga:
         return b
-    edge = (secure.trained_elo(a) - secure.trained_elo(b)) * 0.0005
+    elos = cache["_elos"]
+    edge = (elos.get(a, 1500.0) - elos.get(b, 1500.0)) * 0.0005
     return a if rng.random() < 0.5 + edge else b
 
 
@@ -87,7 +93,7 @@ def simulate_once(groups, cache, rng):
 
     qualifiers = winners + runners + best_thirds
     seeded = sorted(qualifiers,
-                    key=lambda t: secure.trained_elo(t) + cache["_deltas"].get(t, 0.0),
+                    key=lambda t: cache["_elos"].get(t, 1500.0),
                     reverse=True)
     pairs = [(seeded[i], seeded[31 - i]) for i in range(16)]
 
@@ -100,11 +106,15 @@ def simulate_once(groups, cache, rng):
     return reached
 
 
-def run_simulation(groups, deltas=None, n: int = 10000, seed: int | None = None):
-    """Run N tournaments; return each team's probability of reaching each stage."""
-    deltas = deltas or {}
+def run_simulation(groups, elos=None, n: int = 10000, seed: int | None = None):
+    """Run N tournaments; return each team's probability of reaching each stage.
+
+    `elos` maps each team to its calibrated Elo. If omitted, falls back to the
+    engine's trained Elo (uncalibrated)."""
+    if not elos:
+        elos = {t: secure.trained_elo(t) for teams in groups.values() for t in teams}
     rng = random.Random(seed)
-    cache = _build_cache(groups, deltas)
+    cache = _build_cache(groups, elos)
     counts = defaultdict(lambda: defaultdict(int))
     for _ in range(n):
         reached = simulate_once(groups, cache, rng)
