@@ -76,7 +76,7 @@ def load_squads() -> dict:
 
 def save_squads(squads: dict) -> None:
     with open(SQUAD_FILE, "w", encoding="utf-8") as f:
-        json.dump(squads, f, indent=2)
+        json.dump(squads, f, indent=2, ensure_ascii=False)
 
 
 def effective_elo(squad: dict) -> float:
