@@ -42,19 +42,19 @@ FIXTURES: list[tuple[str, str, str, str, str]] = [
     # Group E  (CUR-ECU / venue corrected from a source swap with Group F)
     ("E", "Jun 14", "Germany", "Curacao", "Houston"),
     ("E", "Jun 14", "Ivory Coast", "Ecuador", "Philadelphia"),
-    ("E", "Jun 20", "Ecuador", "Curacao", "Houston"),
+    ("E", "Jun 20", "Ecuador", "Curacao", "Kansas City"),
     ("E", "Jun 20", "Germany", "Ivory Coast", "Toronto"),
     ("E", "Jun 25", "Ecuador", "Germany", "New York/New Jersey"),
     ("E", "Jun 25", "Curacao", "Ivory Coast", "Philadelphia"),
     # Group F
     ("F", "Jun 14", "Netherlands", "Japan", "Dallas (Arlington)"),
     ("F", "Jun 14", "Sweden", "Tunisia", "Monterrey"),
-    ("F", "Jun 20", "Netherlands", "Sweden", "Kansas City"),
+    ("F", "Jun 20", "Netherlands", "Sweden", "Houston"),
     ("F", "Jun 20", "Tunisia", "Japan", "Monterrey"),
     ("F", "Jun 25", "Japan", "Sweden", "Dallas (Arlington)"),
     ("F", "Jun 25", "Tunisia", "Netherlands", "Kansas City"),
     # Group G
-    ("G", "Jun 15", "Belgium", "Egypt", "Vancouver"),
+    ("G", "Jun 15", "Belgium", "Egypt", "Seattle"),
     ("G", "Jun 15", "Iran", "New Zealand", "Los Angeles"),
     ("G", "Jun 21", "Belgium", "Iran", "Los Angeles"),
     ("G", "Jun 21", "New Zealand", "Egypt", "Vancouver"),

@@ -80,7 +80,7 @@ STADIUM: dict[str, str] = {
     "San Francisco Bay": "Levi's Stadium",
     "Seattle": "Lumen Field",
     "Guadalajara": "Estadio Akron",
-    "Mexico City": "Estadio Azteca",
+    "Mexico City": "Estadio Banorte",  # formerly Estadio Azteca, renamed for WC2026
     "Monterrey": "Estadio BBVA",
     "Toronto": "BMO Field",
     "Vancouver": "BC Place",

@@ -4098,7 +4098,7 @@
         "name": "Juriën Gaari",
         "pos": "DEF",
         "rating": 53,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -4150,7 +4150,7 @@
         "id": 8,
         "number": 9,
         "name": "Jürgen Locadia",
-        "pos": "MID",
+        "pos": "FWD",
         "rating": 55,
         "starter": true,
         "available": true
@@ -4179,7 +4179,7 @@
         "name": "Sontje Hansen",
         "pos": "MID",
         "rating": 52,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -4251,7 +4251,7 @@
         "name": "Joshua Brenet",
         "pos": "DEF",
         "rating": 51,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -4278,7 +4278,7 @@
         "name": "Riechedly Bazoer",
         "pos": "DEF",
         "rating": 51,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -4365,7 +4365,7 @@
         "name": "Seko Fofana",
         "pos": "MID",
         "rating": 68,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -4374,7 +4374,7 @@
         "name": "Odilon Kossounou",
         "pos": "DEF",
         "rating": 66,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -4392,7 +4392,7 @@
         "name": "Ange-Yoan Bonny",
         "pos": "FWD",
         "rating": 67,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -4419,7 +4419,7 @@
         "name": "Elye Wahi",
         "pos": "MID",
         "rating": 66,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -4444,9 +4444,9 @@
         "id": 14,
         "number": 15,
         "name": "Amad Diallo",
-        "pos": "FWD",
+        "pos": "MID",
         "rating": 64,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -4464,16 +4464,16 @@
         "name": "Guéla Doué",
         "pos": "DEF",
         "rating": 65,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
         "id": 17,
         "number": 18,
         "name": "Ibrahim Sangaré",
-        "pos": "MID",
+        "pos": "DEF",
         "rating": 63,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -4482,7 +4482,7 @@
         "name": "Nicolas Pépé",
         "pos": "MID",
         "rating": 66,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -4527,7 +4527,7 @@
         "name": "Bazoumana Touré",
         "pos": "MID",
         "rating": 62,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -4545,7 +4545,7 @@
         "name": "Christ Inao Oulai",
         "pos": "MID",
         "rating": 66,
-        "starter": false,
+        "starter": true,
         "available": true
       }
     ]
@@ -4587,16 +4587,16 @@
         "name": "Joel Ordóñez",
         "pos": "DEF",
         "rating": 71,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
         "id": 4,
         "number": 5,
         "name": "Jordy Alcívar",
-        "pos": "MID",
+        "pos": "DEF",
         "rating": 68,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -4612,9 +4612,9 @@
         "id": 6,
         "number": 7,
         "name": "Pervis Estupiñán",
-        "pos": "DEF",
+        "pos": "MID",
         "rating": 68,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -4677,7 +4677,7 @@
         "name": "Alan Minda",
         "pos": "MID",
         "rating": 65,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -4951,7 +4951,7 @@
         "id": 17,
         "number": 18,
         "name": "Donyell Malen",
-        "pos": "FWD",
+        "pos": "MID",
         "rating": 82,
         "starter": true,
         "available": true
@@ -4962,7 +4962,7 @@
         "name": "Brian Brobbey",
         "pos": "FWD",
         "rating": 85,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -5007,7 +5007,7 @@
         "name": "Crysencio Summerville",
         "pos": "MID",
         "rating": 85,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -5058,7 +5058,7 @@
         "name": "Shōgo Taniguchi",
         "pos": "DEF",
         "rating": 75,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -5067,7 +5067,7 @@
         "name": "Kō Itakura",
         "pos": "DEF",
         "rating": 77,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -5094,7 +5094,7 @@
         "name": "Ao Tanaka",
         "pos": "MID",
         "rating": 77,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -5103,7 +5103,7 @@
         "name": "Takefusa Kubo",
         "pos": "MID",
         "rating": 77,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -5130,7 +5130,7 @@
         "name": "Daizen Maeda",
         "pos": "MID",
         "rating": 74,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -5157,7 +5157,7 @@
         "name": "Junya Itō",
         "pos": "MID",
         "rating": 73,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -5175,7 +5175,7 @@
         "name": "Tsuyoshi Watanabe",
         "pos": "DEF",
         "rating": 71,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -5229,7 +5229,7 @@
         "name": "Takehiro Tomiyasu",
         "pos": "DEF",
         "rating": 70,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -5520,14 +5520,14 @@
         "name": "Mouhib Chamakh",
         "pos": "GK",
         "rating": 61,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
         "id": 1,
         "number": 2,
         "name": "Ali Abdi",
-        "pos": "DEF",
+        "pos": "MID",
         "rating": 62,
         "starter": true,
         "available": true
@@ -5565,7 +5565,7 @@
         "name": "Dylan Bronn",
         "pos": "DEF",
         "rating": 63,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -5628,7 +5628,7 @@
         "name": "Rani Khedira",
         "pos": "MID",
         "rating": 60,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -5655,7 +5655,7 @@
         "name": "Aymen Dahmen",
         "pos": "GK",
         "rating": 58,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -5689,7 +5689,7 @@
         "id": 19,
         "number": 20,
         "name": "Yan Valery",
-        "pos": "DEF",
+        "pos": "MID",
         "rating": 57,
         "starter": true,
         "available": true
@@ -5700,7 +5700,7 @@
         "name": "Mohamed Amine Ben Hamida",
         "pos": "DEF",
         "rating": 58,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -5743,9 +5743,9 @@
         "id": 25,
         "number": 26,
         "name": "Sebastian Tounekti",
-        "pos": "MID",
+        "pos": "FWD",
         "rating": 57,
-        "starter": false,
+        "starter": true,
         "available": true
       }
     ]
@@ -5796,7 +5796,7 @@
         "name": "Maxim De Cuyper",
         "pos": "DEF",
         "rating": 83,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -5832,7 +5832,7 @@
         "name": "Romelu Lukaku",
         "pos": "FWD",
         "rating": 87,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -5850,7 +5850,7 @@
         "name": "Jérémy Doku",
         "pos": "MID",
         "rating": 86,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -5904,7 +5904,7 @@
         "name": "Charles De Ketelaere",
         "pos": "FWD",
         "rating": 83,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -5940,7 +5940,7 @@
         "name": "Timothy Castagne",
         "pos": "DEF",
         "rating": 79,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -5949,7 +5949,7 @@
         "name": "Alexis Saelemaekers",
         "pos": "MID",
         "rating": 80,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -5958,7 +5958,7 @@
         "name": "Nicolas Raskin",
         "pos": "MID",
         "rating": 81,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -5967,7 +5967,7 @@
         "name": "Amadou Onana",
         "pos": "MID",
         "rating": 83,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -6249,7 +6249,7 @@
         "name": "Saleh Hardani",
         "pos": "DEF",
         "rating": 67,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -6258,7 +6258,7 @@
         "name": "Ehsan Hajsafi",
         "pos": "DEF",
         "rating": 65,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -6276,7 +6276,7 @@
         "name": "Milad Mohammadi",
         "pos": "DEF",
         "rating": 65,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -6310,7 +6310,7 @@
         "id": 8,
         "number": 9,
         "name": "Mehdi Taremi",
-        "pos": "MID",
+        "pos": "FWD",
         "rating": 70,
         "starter": true,
         "available": true
@@ -6348,7 +6348,7 @@
         "name": "Hossein Kanaanizadegan",
         "pos": "DEF",
         "rating": 64,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -6384,7 +6384,7 @@
         "name": "Aria Yousefi",
         "pos": "MID",
         "rating": 62,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -6411,7 +6411,7 @@
         "name": "Shahriyar Moghanlou",
         "pos": "MID",
         "rating": 65,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -6436,7 +6436,7 @@
         "id": 22,
         "number": 23,
         "name": "Ramin Rezaeian",
-        "pos": "DEF",
+        "pos": "MID",
         "rating": 65,
         "starter": true,
         "available": true
@@ -6756,7 +6756,7 @@
         "name": "Marcos Llorente",
         "pos": "DEF",
         "rating": 95,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -6774,7 +6774,7 @@
         "name": "Ferran Torres",
         "pos": "MID",
         "rating": 94,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -6783,7 +6783,7 @@
         "name": "Fabián Ruiz",
         "pos": "MID",
         "rating": 94,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -6792,16 +6792,16 @@
         "name": "Gavi",
         "pos": "MID",
         "rating": 93,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
         "id": 9,
         "number": 10,
         "name": "Dani Olmo",
-        "pos": "FWD",
+        "pos": "MID",
         "rating": 93,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -6819,7 +6819,7 @@
         "name": "Pedro Porro",
         "pos": "DEF",
         "rating": 89,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -6846,7 +6846,7 @@
         "name": "Álex Baena",
         "pos": "MID",
         "rating": 91,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -6880,9 +6880,9 @@
         "id": 18,
         "number": 19,
         "name": "Lamine Yamal",
-        "pos": "FWD",
+        "pos": "MID",
         "rating": 90,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -7005,7 +7005,7 @@
         "name": "Jovane Cabral",
         "pos": "MID",
         "rating": 58,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -7023,7 +7023,7 @@
         "name": "Gilson Benchimol",
         "pos": "FWD",
         "rating": 59,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -7041,7 +7041,7 @@
         "name": "Garry Rodrigues",
         "pos": "MID",
         "rating": 62,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -7077,7 +7077,7 @@
         "name": "Laros Duarte",
         "pos": "MID",
         "rating": 53,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -7104,7 +7104,7 @@
         "name": "Telmo Arcanjo",
         "pos": "MID",
         "rating": 57,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -7113,7 +7113,7 @@
         "name": "Dailon Livramento",
         "pos": "FWD",
         "rating": 55,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -7218,7 +7218,7 @@
         "name": "Ali Lajami",
         "pos": "DEF",
         "rating": 58,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -7245,7 +7245,7 @@
         "name": "Nasser Al-Dawsari",
         "pos": "MID",
         "rating": 60,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -7270,7 +7270,7 @@
         "id": 8,
         "number": 9,
         "name": "Firas Al-Buraikan",
-        "pos": "MID",
+        "pos": "FWD",
         "rating": 57,
         "starter": true,
         "available": true
@@ -7398,7 +7398,7 @@
         "name": "Mohamed Kanno",
         "pos": "MID",
         "rating": 54,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -7425,7 +7425,7 @@
         "name": "Mohammed Abu Al-Shamat",
         "pos": "MID",
         "rating": 54,
-        "starter": true,
+        "starter": false,
         "available": true
       }
     ]
@@ -7474,7 +7474,7 @@
         "id": 4,
         "number": 5,
         "name": "Manuel Ugarte",
-        "pos": "MID",
+        "pos": "DEF",
         "rating": 83,
         "starter": true,
         "available": true
@@ -7512,7 +7512,7 @@
         "name": "Darwin Núñez",
         "pos": "FWD",
         "rating": 83,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -7557,7 +7557,7 @@
         "name": "Agustín Canobbio",
         "pos": "MID",
         "rating": 78,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
@@ -7584,7 +7584,7 @@
         "name": "Matías Viña",
         "pos": "DEF",
         "rating": 76,
-        "starter": true,
+        "starter": false,
         "available": true
       },
       {
@@ -7618,7 +7618,7 @@
         "id": 20,
         "number": 21,
         "name": "Federico Viñas",
-        "pos": "MID",
+        "pos": "FWD",
         "rating": 78,
         "starter": true,
         "available": true
@@ -7654,9 +7654,9 @@
         "id": 24,
         "number": 25,
         "name": "Juan Manuel Sanabria",
-        "pos": "MID",
+        "pos": "DEF",
         "rating": 77,
-        "starter": false,
+        "starter": true,
         "available": true
       },
       {
