@@ -414,15 +414,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send({"applied": 0, "reason": sc.get("reason"),
                                    "requestsRemaining": sc.get("requestsRemaining")})
             known = list(teams_mod.ELO)
-            existing = {r["key"] for r in live_mod.results()}
+            prior = live_mod.results()
+            existing = {r["key"] for r in prior}
+            # Also dedupe by team pair so a match already recorded from another
+            # source (e.g. ESPN) isn't double-counted under a different key.
+            existing_pairs = {(r["home"], r["away"]) for r in prior}
             applied = []
             for m in sc["matches"]:
                 h = odds_mod.to_known_team(m["home"], known)
                 a = odds_mod.to_known_team(m["away"], known)
-                if not h or not a or m["id"] in existing:
+                if (not h or not a or m["id"] in existing
+                        or (h, a) in existing_pairs or (a, h) in existing_pairs):
                     continue
                 live_mod.record_result(h, a, m["gh"], m["ga"], neutral=True,
                                        source="odds-api", ext_id=m["id"])
+                existing_pairs.add((h, a))
                 applied.append({"home": h, "away": a, "score": f"{m['gh']}-{m['ga']}"})
             return self._send({"applied": len(applied), "matches": applied,
                                "requestsRemaining": sc.get("requestsRemaining")})

@@ -30,6 +30,15 @@ GOALS_PER_ELO = 0.0036          # goals of supremacy per Elo point of difference
 SUPREMACY_ELO_WEIGHT = 0.85     # 85% calibrated-Elo supremacy, 15% encrypted
 _LAMBDA_CAP = 6.5
 
+# Total-goals calibration. The encrypted engine's total (lambda_home + lambda_away)
+# ran ~29% low vs WC2026 group-stage scoring (~3.0 goals/match observed over the
+# first 44 matches; model expected ~2.36). The 48-team format packs in mismatches,
+# lifting goal volume. We scale the TOTAL up to close ~80% of that gap (damped to
+# avoid over-fitting early-tournament variance; knockout matches run tighter). The
+# supremacy is left untouched — its 1X2 calibration was already good (~60% top-pick
+# accuracy). Tune this one number as more results land.
+TOTAL_GOALS_SCALE = 1.23
+
 
 @dataclass
 class MatchPrediction:
@@ -73,8 +82,8 @@ def predict_match(home: str, away: str, delta_home: float = 0.0,
 # --- Calibrated-Elo prediction path ------------------------------------------
 
 def _reanchor(lh_e: float, la_e: float, elo_home: float, elo_away: float) -> tuple[float, float]:
-    """Recombine the encrypted total-goals with calibrated-Elo supremacy."""
-    total = lh_e + la_e
+    """Recombine the (scaled) encrypted total-goals with calibrated-Elo supremacy."""
+    total = (lh_e + la_e) * TOTAL_GOALS_SCALE
     sup = (SUPREMACY_ELO_WEIGHT * GOALS_PER_ELO * (elo_home - elo_away)
            + (1.0 - SUPREMACY_ELO_WEIGHT) * (lh_e - la_e))
     lh = max(0.05, min((total + sup) / 2.0, _LAMBDA_CAP))
