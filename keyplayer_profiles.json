@@ -1,0 +1,31 @@
+{
+  "_comment": "Off-field talisman profiles, researched from public reporting (June 2026). 'adj' is a manual Elo nudge applied ONLY when the player is on the pitch — use it for genuine, citable status (injury doubt, returning rusty, peak form beyond stats). Keep it small (+-10) and 0 when the player is simply fit (the form/availability model already covers that). Names must match ESPN displayName exactly.",
+  "Argentina": {
+    "Lionel Messi": {
+      "age": 38, "role": "Captain / playmaker",
+      "status": "fit", "adj": 0,
+      "note": "May hamstring overload (muscle fatigue, not structural); returned to full training, leading the Golden Boot race"
+    }
+  },
+  "France": {
+    "Kylian Mbappé": {
+      "age": 27, "role": "Captain / forward",
+      "status": "fit", "adj": 0,
+      "note": "Missed 4 league games with a knee injury in early 2026; declared fully fit, scored twice vs Senegal"
+    }
+  },
+  "Norway": {
+    "Erling Haaland": {
+      "age": 25, "role": "Striker",
+      "status": "fit, hot form", "adj": 0,
+      "note": "4 goals in 2 matches; scored in 12 consecutive competitive Norway appearances"
+    }
+  },
+  "Brazil": {
+    "Vinícius Júnior": {
+      "age": 25, "role": "Forward",
+      "status": "fit", "adj": 0,
+      "note": "No fitness issues; but Brazil's attacking depth is thin - Rodrygo (ACL) and Estêvão out, Neymar conditioning uncertain"
+    }
+  }
+}

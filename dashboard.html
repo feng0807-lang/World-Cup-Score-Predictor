@@ -385,6 +385,15 @@
         <th class="num" title="Elo impact from form (±10)">Form Elo Δ</th><th>Avail</th></tr></thead>
         <tbody id="squadBody"></tbody></table>
     </div>
+
+    <div class="card" id="keyPlayerCard">
+      <h2>⭐ Key player impact</h2>
+      <p class="note">The team's talisman (by goal involvement). Dependency = how
+        concentrated the team's output is on them. If suspended/injured/unavailable,
+        the team's effective Elo drops in proportion — toggle "Avail" above and re-save
+        to see the swing in predictions.</p>
+      <div id="keyPlayerBox" class="muted">Loading…</div>
+    </div>
   </section>
 
   <!-- FIXTURE FORECAST -->
@@ -646,6 +655,7 @@ async function predict(){
       if(o.weather) parts.push(`weather ${o.weather>0?'+':''}${o.weather}`);
       if(o.coach) parts.push(`coach ${o.coach>0?'+':''}${o.coach}`);
       if(o.sim) parts.push(`sim ${o.sim>0?'+':''}${o.sim}`);
+      if(o.keyPlayer) parts.push(`<span style="color:#f85149">key player ${o.keyPlayer>0?'+':''}${o.keyPlayer}</span>`);
       const adj=parts.length?` (${parts.join(', ')})`:'';
       return `${name}: base ${o.base} → <b>${o.effective}</b>${adj}`;
     };
@@ -977,6 +987,36 @@ async function loadSquad(){
   loadFormForTeam(team);
   renderSquad();
   loadCoach(team);
+  loadKeyPlayer(team);
+}
+
+async function loadKeyPlayer(team){
+  const box=$('#keyPlayerBox');
+  try{
+    const d=await (await fetch('/api/keyplayers?team='+encodeURIComponent(team))).json();
+    if(!d.core){ box.innerHTML='<span class="muted">No key-player data yet — play more matches or refresh form.</span>'; return; }
+    const c=d.core;
+    const dep=Math.round(c.dependency*100);
+    const status = c.suspended ? '<span style="color:#f85149;font-weight:600">SUSPENDED</span>'
+                 : (!c.available ? '<span style="color:#f85149;font-weight:600">UNAVAILABLE</span>'
+                 : '<span style="color:var(--acc)">available</span>');
+    const of=c.offField||{};
+    const ofBits=[];
+    if(of.age) ofBits.push(`age ${of.age}`);
+    if(of.role) ofBits.push(of.role);
+    if(of.status) ofBits.push(`<i>${of.status}</i>`);
+    if(of.adj) ofBits.push(`off-field adj ${of.adj>0?'+':''}${of.adj}`);
+    const ofLine = ofBits.length?`<div class="muted" style="font-size:12px;margin-top:4px">${ofBits.join(' · ')}${of.note?` — ${of.note}`:''}</div>`:'';
+    const watch=(d.watchlist||[]).map(w=>
+      `${w.name} <span style="color:${w.suspended?'#f85149':'var(--warn)'}">${w.suspended?(w.redCards?'red':'2YC ban'):'1YC'}</span>`).join(' · ');
+    box.innerHTML=
+      `<div style="font-size:15px"><b>${c.name}</b> <span class="muted">${c.pos||''}</span> &nbsp; ${status}</div>`+
+      `<div style="margin:6px 0">⚽ ${c.goals}G ${c.assists}A · ${c.sot} SOT${c.saves?` · ${c.saves} saves`:''} · ${c.apps} apps`+
+      ` &nbsp;|&nbsp; <b>dependency ${dep}%</b>`+
+      ` &nbsp;|&nbsp; impact when out: <span style="color:#f85149">${d.keyPlayerDelta? d.keyPlayerDelta : '−'+Math.round(c.dependency*60)} Elo</span></div>`+
+      ofLine+
+      (watch?`<div style="font-size:12px;margin-top:8px;border-top:1px solid var(--line);padding-top:6px">🟨 Discipline watch: ${watch}</div>`:'');
+  }catch(e){ box.innerHTML='<span class="muted">Key-player data unavailable.</span>'; }
 }
 
 async function loadFormForTeam(team){
@@ -1005,7 +1045,10 @@ async function refreshForm(){
     const d=await r.json();
     if(d.ok){
       $('#formStatus').textContent=`✓ ${d.matchesScanned} matches · ${d.teamsWithData} teams · ${d.ts}`;
+      // Key-player analysis draws on the same ESPN data — refresh it too.
+      try{ await fetch('/api/refresh_keyplayers',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); }catch(e){}
       loadFormForTeam($('#lineupTeam').value);
+      loadKeyPlayer($('#lineupTeam').value);
     } else {
       $('#formStatus').textContent='Error: '+(d.error||'fetch failed');
     }

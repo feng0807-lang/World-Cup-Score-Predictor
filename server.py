@@ -32,6 +32,7 @@ import handicap as handicap_mod
 import coach as coach_mod
 import sim_fixtures as sim_mod
 import form as form_mod
+import keyplayers as kp_mod
 from model import predict_calibrated
 from tournament import run_simulation
 
@@ -48,9 +49,11 @@ def _lineup_delta(team: str) -> float:
 
 def _strength_delta(team: str, include_sim: bool = True) -> float:
     """Combined non-weather strength shift vs base Elo: lineup + live + coach + form
-    (+ sim, unless excluded to avoid circular feedback in the fixture forecaster)."""
+    + key-player availability (+ sim, unless excluded to avoid circular feedback
+    in the fixture forecaster)."""
     d = (_lineup_delta(team) + live_mod.get_delta(team) + coach_mod.get_delta(team)
-         + form_mod.team_form_delta(SQUADS.get(team, {}), team))
+         + form_mod.team_form_delta(SQUADS.get(team, {}), team)
+         + kp_mod.team_keyplayer_delta(team, SQUADS.get(team, {})))
     if include_sim:
         d += sim_mod.get_delta(team)
     return d
@@ -210,6 +213,8 @@ class Handler(BaseHTTPRequestHandler):
             frm_h = form_mod.team_form_delta(SQUADS.get(home, {}), home)
             frm_a = form_mod.team_form_delta(SQUADS.get(away, {}), away)
             sim_h, sim_a = sim_mod.get_delta(home), sim_mod.get_delta(away)
+            kp_h = kp_mod.team_keyplayer_delta(home, SQUADS.get(home, {}))
+            kp_a = kp_mod.team_keyplayer_delta(away, SQUADS.get(away, {}))
             wx_h = wx_a = 0.0
             climate_info = None
             venue = q.get("venue", [""])[0]
@@ -227,12 +232,12 @@ class Handler(BaseHTTPRequestHandler):
                          "liveForm": round(live_h, 1), "weather": round(wx_h, 1),
                          "coach": round(coach_h, 1), "coachName": coach_mod.get(home)["name"],
                          "playerForm": round(frm_h, 1), "sim": round(sim_h, 1),
-                         "effective": round(elo_h, 1)},
+                         "keyPlayer": round(kp_h, 1), "effective": round(elo_h, 1)},
                 "away": {"base": round(base_a, 1), "lineup": round(lin_a, 1),
                          "liveForm": round(live_a, 1), "weather": round(wx_a, 1),
                          "coach": round(coach_a, 1), "coachName": coach_mod.get(away)["name"],
                          "playerForm": round(frm_a, 1), "sim": round(sim_a, 1),
-                         "effective": round(elo_a, 1)},
+                         "keyPlayer": round(kp_a, 1), "effective": round(elo_a, 1)},
             }
             return self._send({
                 "home": home, "away": away,
@@ -333,6 +338,26 @@ class Handler(BaseHTTPRequestHandler):
                 "hasCacheData": bool(cache),
                 "players": detail,
             })
+
+        if path == "/api/keyplayers":
+            team = q.get("team", [""])[0]
+            cache = kp_mod._load_cache()
+            if team:
+                if team not in SQUADS:
+                    return self._send({"error": "unknown team"}, 404)
+                return self._send(kp_mod.detail(team, SQUADS[team], cache))
+            # all teams: compact core + delta summary
+            rows = []
+            for t in SQUADS:
+                d = kp_mod.detail(t, SQUADS[t], cache)
+                if d.get("core"):
+                    rows.append({"team": t, "core": d["core"]["name"],
+                                 "pos": d["core"].get("pos", ""),
+                                 "dependency": d["core"]["dependency"],
+                                 "available": d["core"].get("available", True),
+                                 "keyPlayerDelta": d["keyPlayerDelta"]})
+            rows.sort(key=lambda r: -r["dependency"])
+            return self._send({"teams": rows, "meta": kp_mod.meta()})
 
         if path == "/api/form_meta":
             return self._send(form_mod.meta())
@@ -451,6 +476,14 @@ class Handler(BaseHTTPRequestHandler):
                     "ts": cache.get("ts", ""),
                     "errors": cache.get("errors", []),
                 })
+            except Exception as e:
+                return self._send({"ok": False, "error": str(e)}, 500)
+
+        if url.path == "/api/refresh_keyplayers":
+            try:
+                data = kp_mod.analyze(force=True)
+                return self._send({"ok": True, "teamCount": data.get("teamCount", 0),
+                                   "ts": data.get("ts", "")})
             except Exception as e:
                 return self._send({"ok": False, "error": str(e)}, 500)
 
