@@ -156,9 +156,11 @@ def _accumulate(sess, league: str, event_id: str, weight: float,
             pos_abbr = pos.get("abbreviation", "")
             started = bool(entry.get("starter"))
             b = broad[(team, name)]
-            gi = st.get("totalGoals", 0) * 2 + st.get("goalAssists", 0)
-            b["wgoals"] += st.get("totalGoals", 0) * weight
-            b["wgi"] += gi * weight
+            # Dependency is share of goal CONTRIBUTIONS (G + A) so creators count,
+            # not just finishers. Ranking adds shots-on-target as a threat proxy.
+            contrib = st.get("totalGoals", 0) + st.get("goalAssists", 0)
+            b["wcontrib"] += contrib * weight
+            b["wgi"] += (contrib + st.get("shotsOnTarget", 0) * 0.25) * weight
             b["goals"] += st.get("totalGoals", 0)
             b["assists"] += st.get("goalAssists", 0)
             b["sot"] += st.get("shotsOnTarget", 0)
@@ -166,7 +168,8 @@ def _accumulate(sess, league: str, event_id: str, weight: float,
             b["matches"] += 1
             if started:
                 b["starts"] += 1
-            if pos_abbr and not b.get("_pos"):
+            # Prefer a real position over a "SUB" / blank label.
+            if pos_abbr and (not b.get("_pos") or b.get("_pos") == "SUB"):
                 b["_pos"] = pos_abbr
             if is_wc:
                 w = wc[(team, name)]
@@ -204,24 +207,27 @@ def analyze(force: bool = False, verbose: bool = False) -> dict:
             _accumulate(sess, league, ev["id"], weight, broad, wc, known)
             time.sleep(0.03)
 
-    # Per-team team-level weighted goals (for dependency shares)
-    team_wgoals: dict[str, float] = defaultdict(float)
+    # Per-team total goal contributions (G+A) for dependency shares
+    team_contrib: dict[str, float] = defaultdict(float)
     for (team, name), s in broad.items():
-        team_wgoals[team] += s["wgoals"]
+        team_contrib[team] += s["wcontrib"]
 
     by_team: dict[str, list] = defaultdict(list)
     for (team, name), s in broad.items():
         by_team[team].append((name, s))
 
+    all_profiles = load_profiles()
     teams: dict[str, dict] = {}
     for team, roster in by_team.items():
-        twg = team_wgoals[team]
+        tc = team_contrib[team]
+        prof = all_profiles.get(team, {})
         rows = []
         for name, s in roster:
             w = wc.get((team, name), {})
             yc, rc = int(w.get("yellowCards", 0)), int(w.get("redCards", 0))
             apps = int(w.get("apps", 0))
-            dep = min(DEP_CAP, s["wgoals"] / (twg + DEP_PRIOR_GOALS)) if twg else 0.0
+            # dependency = shrunk share of team goal contributions (G+A)
+            dep = min(DEP_CAP, s["wcontrib"] / (tc + DEP_PRIOR_GOALS)) if tc else 0.0
             rows.append({
                 "name": name,
                 "pos": s.get("_pos", ""),
@@ -238,12 +244,13 @@ def analyze(force: bool = False, verbose: bool = False) -> dict:
                 "suspended": rc >= 1 or yc >= 2,
                 "suspensionRisk": not (rc >= 1 or yc >= 2) and yc == 1,
                 "fatigue": apps >= FATIGUE_FLAG_APPS,
+                "designated": False,
                 "_score": s["wgi"],
             })
-        # Rank by weighted goal involvement
         rows.sort(key=lambda r: -r["_score"])
-        # Core group: top attacking contributors (exclude GKs and pure subs),
-        # take the leader plus any others above CORE_MIN_SHARE, capped at 3.
+        by_name = {r["name"]: r for r in rows}
+
+        # Data-driven core: top attacking contributors (exclude GKs and pure subs)
         candidates = [r for r in rows
                       if _is_attacker(r["pos"]) and r["starts"] >= 1 and r["_score"] > 0]
         group = []
@@ -252,6 +259,33 @@ def analyze(force: bool = False, verbose: bool = False) -> dict:
                 group.append(r)
             if len(group) >= CORE_GROUP_MAX:
                 break
+
+        # Designated key players (profile "key": true) — eye-test talismen the
+        # box score under-credits (e.g. a creator playing few minutes). Force them
+        # into the group with their profile dependency (or their data share).
+        for pname, pinfo in prof.items():
+            if not isinstance(pinfo, dict) or not pinfo.get("key"):
+                continue
+            r = by_name.get(pname)
+            if r is None:
+                r = {"name": pname, "pos": pinfo.get("role", ""), "goals": 0,
+                     "assists": 0, "sot": 0, "saves": 0, "matches": 0, "starts": 0,
+                     "yellowCards": 0, "redCards": 0, "apps": 0, "dependency": 0.0,
+                     "suspended": False, "suspensionRisk": False, "fatigue": False,
+                     "designated": True}
+            r["designated"] = True
+            r["dependency"] = round(max(r["dependency"], float(pinfo.get("dependency", 0) or 0)), 3)
+            if r not in group:
+                group.append(r)
+
+        # Keep the strongest CORE_GROUP_MAX, but never drop a designated player.
+        group.sort(key=lambda r: (r["designated"], r["dependency"]), reverse=True)
+        keep = [r for r in group if r["designated"]]
+        for r in group:
+            if r not in keep and len(keep) < CORE_GROUP_MAX:
+                keep.append(r)
+        group = sorted(keep, key=lambda r: -r["dependency"])
+
         # Cap combined dependency
         gsum = sum(r["dependency"] for r in group)
         if gsum > GROUP_DEP_CAP and gsum > 0:
@@ -260,11 +294,13 @@ def analyze(force: bool = False, verbose: bool = False) -> dict:
                 r["dependency"] = round(r["dependency"] * scale, 3)
         for r in rows:
             r.pop("_score", None)
+        for r in group:
+            r.pop("_score", None)
         teams[team] = {
             "coreGroup": group,
             "core": group[0] if group else None,
             "players": rows[:8],
-            "teamGoals": round(twg, 1),
+            "teamGoals": round(tc, 1),
         }
 
     out = {

@@ -1,5 +1,12 @@
 {
-  "_comment": "Off-field talisman profiles, researched from public reporting (June 2026). 'adj' is a manual Elo nudge applied ONLY when the player is on the pitch — use it for genuine, citable status (injury doubt, returning rusty, peak form beyond stats). Keep it small (+-10) and 0 when the player is simply fit (the form/availability model already covers that). Names must match ESPN displayName exactly.",
+  "_comment": "Off-field talisman profiles, researched from public reporting (June 2026). 'adj' is a manual Elo nudge applied ONLY when the player is on the pitch — use it for genuine, citable status (injury doubt, returning rusty, peak form beyond stats). Keep it small (+-10) and 0 when the player is simply fit. Set 'key': true with a 'dependency' (0-0.4) to FORCE a player into the core group when the box score under-credits them (e.g. a creator with few goals whose influence is obvious on the eye test). Names must match ESPN displayName exactly.",
+  "Spain": {
+    "Lamine Yamal": {
+      "age": 18, "role": "RW",
+      "key": true, "dependency": 0.22, "adj": 0,
+      "note": "Box score (1G 3A in window) badly under-rates him. With/without is stark: came off the bench in the 0-0 vs Cape Verde, started the 4-0 vs Saudi Arabia. Spain's chief creator."
+    }
+  },
   "Argentina": {
     "Lionel Messi": {
       "age": 38, "role": "Captain / playmaker",
