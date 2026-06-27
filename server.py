@@ -34,6 +34,7 @@ import sim_fixtures as sim_mod
 import form as form_mod
 import keyplayers as kp_mod
 import context as ctx_mod
+import valuebets as vb_mod
 from model import predict_calibrated, home_advantage
 from tournament import run_simulation
 
@@ -81,6 +82,17 @@ def _all_calibrated_elos() -> dict[str, float]:
 def _elos_from_deltas(deltas: dict) -> dict[str, float]:
     """Reconstruct calibrated Elos from a stored strength-delta snapshot."""
     return {t: SQUADS[t]["base_elo"] + deltas.get(t, 0.0) for t in SQUADS}
+
+
+def _model_probs(home: str, away: str, venue: str | None = None,
+                 date: str | None = None) -> dict:
+    """The model's calibrated 1X2 for a matchup (home advantage + context, no
+    market blend) — the basis for value/EV comparison against bookmaker odds."""
+    ctx = ctx_mod.context_delta(home, away, venue=venue, match_date=date)
+    elo_h = _calibrated_elo(home) + ctx["home"]
+    elo_a = _calibrated_elo(away) + ctx["away"]
+    p = predict_calibrated(home, away, elo_h, elo_a, home_adv=home_advantage(home))
+    return {"home": p.p_home_win, "draw": p.p_draw, "away": p.p_away_win}
 
 
 def _odds_payload(home: str, away: str, blend: float | None):
@@ -369,6 +381,34 @@ class Handler(BaseHTTPRequestHandler):
                 "players": detail,
             })
 
+        if path == "/api/value":
+            home, away = q.get("home", [""])[0], q.get("away", [""])[0]
+            if not home or not away:
+                return self._send({"error": "home and away required"}, 400)
+            mp = _model_probs(home, away, q.get("venue", [None])[0],
+                              q.get("date", [None])[0])
+            # odds: manual (oh/od/oa) or from the odds API
+            try:
+                oh = float(q.get("oh", [""])[0]); od = float(q.get("od", [""])[0])
+                oa = float(q.get("oa", [""])[0])
+                odds = {"home": oh, "draw": od, "away": oa}; source = "manual"
+            except ValueError:
+                mkt = odds_mod.get_market(home, away)
+                best = mkt.get("bestOdds") if mkt.get("available") else None
+                if not best:
+                    return self._send({"home": home, "away": away, "model": mp,
+                                       "oddsAvailable": False,
+                                       "reason": mkt.get("reason", "no_odds")})
+                odds = {k: best[k]["price"] for k in ("home", "draw", "away")}
+                source = "the-odds-api"
+            ev = vb_mod.evaluate(mp, odds)
+            return self._send({"home": home, "away": away, "model": mp,
+                               "odds": odds, "oddsSource": source, **ev})
+
+        if path == "/api/value_ledger":
+            s = vb_mod.summary()
+            return self._send(s)
+
         if path == "/api/keyplayers":
             team = q.get("team", [""])[0]
             cache = kp_mod._load_cache()
@@ -508,6 +548,24 @@ class Handler(BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 return self._send({"ok": False, "error": str(e)}, 500)
+
+        if url.path == "/api/value_log":
+            try:
+                rec = vb_mod.log_bet(
+                    body["home"], body["away"], body["pick"],
+                    float(body["odds"]), float(body.get("stake", 1)),
+                    model_prob=body.get("modelProb"), note=body.get("note", ""))
+                return self._send({"ok": True, "bet": rec, "summary": vb_mod.summary()})
+            except (KeyError, ValueError, TypeError) as e:
+                return self._send({"error": f"need home/away/pick/odds: {e}"}, 400)
+
+        if url.path == "/api/value_settle":
+            vb_mod.settle()
+            return self._send(vb_mod.summary())
+
+        if url.path == "/api/value_remove":
+            vb_mod.remove_bet(body.get("id", ""))
+            return self._send(vb_mod.summary())
 
         if url.path == "/api/refresh_keyplayers":
             try:

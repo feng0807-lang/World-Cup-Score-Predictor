@@ -445,6 +445,30 @@
   <!-- MY BETS -->
   <section id="tab-bets" class="hidden">
     <div class="card">
+      <h2>💰 Value finder & track record</h2>
+      <p class="note">Enter a match and the bookmaker's 1X2 odds. The model tells you if there's
+        <b>value</b> (its probability beats the price) — not just who wins. Log the bets you take;
+        "Settle" scores them against results so you see your <b>real</b> win rate, ROI and P/L.</p>
+      <div class="row" style="font-size:13px;flex-wrap:wrap;gap:8px">
+        <select id="vbHome"></select><span class="muted">vs</span><select id="vbAway"></select>
+        <label>H <input id="vbOH" type="number" step="0.01" placeholder="1.90" style="width:64px"></label>
+        <label>D <input id="vbOD" type="number" step="0.01" placeholder="3.40" style="width:64px"></label>
+        <label>A <input id="vbOA" type="number" step="0.01" placeholder="4.20" style="width:64px"></label>
+        <button onclick="checkValue()">Check value</button>
+        <button class="ghost" onclick="checkValue(true)">Use live odds (API)</button>
+      </div>
+      <div id="vbResult" class="hidden" style="margin-top:12px"></div>
+      <div class="row" style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+        <h2 style="font-size:15px;margin:0">Track record</h2>
+        <button class="ghost" onclick="settleBets()">⟳ Settle vs results</button>
+        <span id="vbSummary" class="muted" style="font-size:13px"></span>
+      </div>
+      <table style="margin-top:8px"><thead><tr><th>Match</th><th>Pick</th><th class="num">Odds</th>
+        <th class="num">Stake</th><th>Status</th><th class="num">P/L</th><th></th></tr></thead>
+        <tbody id="vbLedger"></tbody></table>
+    </div>
+
+    <div class="card">
       <h2>Position stress tester</h2>
       <p class="note">Run a prediction first (Match Predictor tab), then optionally enable in-play mode. The scoreline distribution is used to compute settlement probability and EV for each position.</p>
       <div id="betModelInfo" class="muted" style="font-size:13px;margin-bottom:12px">No prediction loaded — go to Match Predictor first.</div>
@@ -509,6 +533,7 @@ async function init(){
   $('#lineupTeam').innerHTML = teams.map(t=>`<option>${t.team}</option>`).join('');
   const topts=teams.map(t=>`<option>${t.team}</option>`).join('');
   if($('#resHome')){ $('#resHome').innerHTML=topts; $('#resAway').innerHTML=topts; $('#resAway').selectedIndex=1; }
+  if($('#vbHome')){ $('#vbHome').innerHTML=topts; $('#vbAway').innerHTML=topts; $('#vbAway').selectedIndex=1; }
   $('#away').selectedIndex = 1;
   try{
     const vs=(await (await fetch('/api/venues')).json()).venues||[];
@@ -538,7 +563,57 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   if(t.dataset.tab==='history'){ loadHistory(); loadLiveRatings(); }
   if(t.dataset.tab==='standings') loadStandings();
   if(t.dataset.tab==='simfix') loadSimMeta();
+  if(t.dataset.tab==='bets') loadLedger();
 });
+
+async function checkValue(useApi){
+  const h=$('#vbHome').value, a=$('#vbAway').value;
+  let url='/api/value?home='+encodeURIComponent(h)+'&away='+encodeURIComponent(a);
+  if(!useApi){
+    const oh=$('#vbOH').value, od=$('#vbOD').value, oa=$('#vbOA').value;
+    if(!oh||!od||!oa){ $('#vbResult').className=''; $('#vbResult').innerHTML='<span class="note">Enter all three odds, or use live odds.</span>'; return; }
+    url+=`&oh=${oh}&od=${od}&oa=${oa}`;
+  }
+  const d=await (await fetch(url)).json();
+  const box=$('#vbResult'); box.className='';
+  if(d.oddsAvailable===false){ box.innerHTML=`<span class="note">No live odds (${d.reason}). Enter them manually.</span>`; return; }
+  const lbl={home:h,draw:'Draw',away:a};
+  let rows=d.rows.map(r=>{
+    const val=r.value?'<b style="color:var(--acc)">VALUE</b>':'';
+    const evc=r.ev>0?'var(--acc)':'#f85149';
+    return `<tr><td>${lbl[r.outcome]}</td><td class="num">${(r.modelProb*100).toFixed(0)}%</td>
+      <td class="num">${(r.marketProb*100).toFixed(0)}%</td><td class="num">${r.odds}</td>
+      <td class="num" style="color:${evc}">${(r.ev*100>=0?'+':'')}${(r.ev*100).toFixed(0)}%</td>
+      <td>${val} ${r.value?`<button class="ghost" style="font-size:11px" onclick="logBet('${h.replace(/'/g,"")}','${a.replace(/'/g,"")}','${r.outcome}',${r.odds},${r.modelProb})">Log</button>`:''}</td></tr>`;
+  }).join('');
+  box.innerHTML=`<div class="muted" style="font-size:12px;margin-bottom:4px">Odds: ${d.oddsSource} · overround ${((d.overround-1)*100).toFixed(1)}%</div>`+
+    `<table style="margin:0"><thead><tr><th>Outcome</th><th class="num">Model</th><th class="num">Market</th><th class="num">Odds</th><th class="num">EV</th><th></th></tr></thead><tbody>${rows}</tbody></table>`+
+    (d.best?`<p class="note" style="color:var(--acc)">▶ Best value: back <b>${lbl[d.best.outcome]}</b> @ ${d.best.odds} (EV ${(d.best.ev*100).toFixed(0)}%)</p>`
+           :`<p class="note">No value — the bookmaker's price is fair or better than the model on every outcome. Skip this match.</p>`);
+}
+
+async function logBet(h,a,pick,odds,mp){
+  const stake=prompt('Stake (units)?','10'); if(stake===null) return;
+  await fetch('/api/value_log',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({home:h,away:a,pick,odds,stake:parseFloat(stake),modelProb:mp})});
+  loadLedger();
+}
+async function settleBets(){ await fetch('/api/value_settle',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); loadLedger(); }
+async function removeBet(id){ await fetch('/api/value_remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); loadLedger(); }
+async function loadLedger(){
+  const s=await (await fetch('/api/value_ledger')).json();
+  const roi=s.roi==null?'—':(s.roi>=0?'+':'')+s.roi+'%';
+  const pnl=s.pnl==null?'—':(s.pnl>=0?'+':'')+s.pnl;
+  $('#vbSummary').innerHTML=`${s.settled} settled · win rate <b>${s.winRate??'—'}%</b> · staked ${s.staked} · `+
+    `P/L <b style="color:${(s.pnl||0)>=0?'var(--acc)':'#f85149'}">${pnl}</b> · ROI <b style="color:${(s.roi||0)>=0?'var(--acc)':'#f85149'}">${roi}</b> · ${s.pending} pending`;
+  $('#vbLedger').innerHTML=(s.bets||[]).slice().reverse().map(b=>{
+    const col=b.status==='won'?'var(--acc)':b.status==='lost'?'#f85149':'var(--mut)';
+    return `<tr><td>${b.home} v ${b.away}</td><td>${b.pick}${b.result?` (${b.result})`:''}</td>
+      <td class="num">${b.odds}</td><td class="num">${b.stake}</td>
+      <td style="color:${col}">${b.status}</td><td class="num">${b.pnl==null?'':(b.pnl>=0?'+':'')+b.pnl}</td>
+      <td><button class="ghost" style="font-size:11px" onclick="removeBet('${b.id}')">✕</button></td></tr>`;
+  }).join('')||'<tr><td colspan="7" class="muted">No bets logged yet.</td></tr>';
+}
 
 async function loadSimMeta(){
   try{
