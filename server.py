@@ -575,6 +575,14 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send({"ok": False, "error": str(e)}, 500)
 
+        if url.path == "/api/update_lineups":
+            try:
+                import update_lineups
+                summary = update_lineups.update_squads(SQUADS, verbose=False)
+                return self._send({"ok": True, **summary})
+            except Exception as e:
+                return self._send({"ok": False, "error": str(e)}, 500)
+
         if url.path == "/api/coach":
             team = body.get("team", "")
             if not team:

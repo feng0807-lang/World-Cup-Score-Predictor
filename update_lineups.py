@@ -90,17 +90,26 @@ def _collect_latest_rosters() -> dict[str, dict]:
     return latest
 
 
-def update_squads():
-    squads = squads_mod.load_squads()
+def update_squads(squads=None, verbose=True):
+    """Update every team's starting XI from its latest ESPN roster.
+
+    If `squads` is passed (e.g. the server's in-memory dict) it is mutated in
+    place so existing references stay valid. Returns a summary dict.
+    """
+    if squads is None:
+        squads = squads_mod.load_squads()
     latest = _collect_latest_rosters()
-    print(f"\nFound recent rosters for {len(latest)} teams.\n")
+    if verbose:
+        print(f"\nFound recent rosters for {len(latest)} teams.\n")
 
     total_updated = 0
     unmatched_report = []
 
+    incomplete = []
     for team, info in sorted(latest.items()):
         if team not in squads:
-            print(f"  ?? {team}: in ESPN but not in squads.json — skipped")
+            if verbose:
+                print(f"  ?? {team}: in ESPN but not in squads.json — skipped")
             continue
         squad = squads[team]
         players = squad["players"]
@@ -148,16 +157,26 @@ def update_squads():
 
         n_start = sum(1 for p in players if p.get("starter"))
         eff = squads_mod.effective_elo(squad)
-        flag = "" if n_start == 11 else f"  <-- {n_start} starters!"
-        print(f"  {team:<24} XI set ({n_start}), +{added} new, eff Elo {eff}{flag}")
+        if n_start != 11:
+            incomplete.append(f"{team} ({n_start})")
+        if verbose:
+            flag = "" if n_start == 11 else f"  <-- {n_start} starters!"
+            print(f"  {team:<24} XI set ({n_start}), +{added} new, eff Elo {eff}{flag}")
         total_updated += 1
 
     squads_mod.save_squads(squads)
-    print(f"\nUpdated {total_updated} teams. Saved squads.json.")
-    if unmatched_report:
-        print(f"\nNew players added ({len(unmatched_report)}):")
-        for r in unmatched_report:
-            print("  ", r)
+    if verbose:
+        print(f"\nUpdated {total_updated} teams. Saved squads.json.")
+        if unmatched_report:
+            print(f"\nNew players added ({len(unmatched_report)}):")
+            for r in unmatched_report:
+                print("  ", r)
+    return {
+        "teamsUpdated": total_updated,
+        "rostersFound": len(latest),
+        "newPlayers": unmatched_report,
+        "incomplete": incomplete,
+    }
 
 
 if __name__ == "__main__":
