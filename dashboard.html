@@ -657,6 +657,7 @@ async function predict(){
       if(o.sim) parts.push(`sim ${o.sim>0?'+':''}${o.sim}`);
       if(o.keyPlayer) parts.push(`<span style="color:#f85149">key player ${o.keyPlayer>0?'+':''}${o.keyPlayer}</span>`);
       if(o.homeAdv) parts.push(`<span style="color:var(--acc2)">home +${o.homeAdv}</span>`);
+      if(o.context) parts.push(`rest/altitude ${o.context>0?'+':''}${o.context}`);
       const adj=parts.length?` (${parts.join(', ')})`:'';
       return `${name}: base ${o.base} → <b>${o.effective}</b>${adj}`;
     };

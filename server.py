@@ -33,6 +33,7 @@ import coach as coach_mod
 import sim_fixtures as sim_mod
 import form as form_mod
 import keyplayers as kp_mod
+import context as ctx_mod
 from model import predict_calibrated, home_advantage
 from tournament import run_simulation
 
@@ -224,9 +225,12 @@ class Handler(BaseHTTPRequestHandler):
                 assess = climate_mod.climate_assessment(home, away, weather)
                 wx_h, wx_a = assess["deltaHome"], assess["deltaAway"]
                 climate_info = {"venue": venue, "weather": weather, "assessment": assess}
-            # Calibrated Elo drives supremacy (weather is a match-specific add-on).
-            elo_h = _calibrated_elo(home) + wx_h
-            elo_a = _calibrated_elo(away) + wx_a
+            # Match-context: rest days (needs a date) + venue altitude.
+            ctx = ctx_mod.context_delta(home, away, venue=venue or None,
+                                        match_date=q.get("date", [""])[0] or None)
+            # Calibrated Elo drives supremacy (weather + context are add-ons).
+            elo_h = _calibrated_elo(home) + wx_h + ctx["home"]
+            elo_a = _calibrated_elo(away) + wx_a + ctx["away"]
             # Designated-home advantage (extra for host nations); skip if neutral asked.
             ha = 0.0 if q.get("neutral", [""])[0] in ("1", "true") else home_advantage(home)
             p = predict_calibrated(home, away, elo_h, elo_a, home_adv=ha)
@@ -236,23 +240,44 @@ class Handler(BaseHTTPRequestHandler):
                          "coach": round(coach_h, 1), "coachName": coach_mod.get(home)["name"],
                          "playerForm": round(frm_h, 1), "sim": round(sim_h, 1),
                          "keyPlayer": round(kp_h, 1), "homeAdv": round(ha, 1),
-                         "effective": round(elo_h + ha, 1)},
+                         "context": round(ctx["home"], 1), "effective": round(elo_h + ha, 1)},
                 "away": {"base": round(base_a, 1), "lineup": round(lin_a, 1),
                          "liveForm": round(live_a, 1), "weather": round(wx_a, 1),
                          "coach": round(coach_a, 1), "coachName": coach_mod.get(away)["name"],
                          "playerForm": round(frm_a, 1), "sim": round(sim_a, 1),
                          "keyPlayer": round(kp_a, 1), "homeAdv": 0.0,
-                         "effective": round(elo_a, 1)},
+                         "context": round(ctx["away"], 1), "effective": round(elo_a, 1)},
             }
+            pH, pD, pA = p.p_home_win, p.p_draw, p.p_away_win
+            market_info = None
+            # Optional market blend: ?mblend=0.0-1.0 (share of market). The single
+            # strongest external signal in football. No-op without an odds key.
+            try:
+                mblend = float(q.get("mblend", ["0"])[0])
+            except ValueError:
+                mblend = 0.0
+            if mblend > 0:
+                mkt = odds_mod.get_market(home, away)
+                cons = mkt.get("consensus") if mkt.get("available") else None
+                if cons and all(cons.get(k) for k in ("home", "draw", "away")):
+                    w = max(0.0, min(1.0, mblend))
+                    mix = {"H": (1 - w) * pH + w * cons["home"],
+                           "D": (1 - w) * pD + w * cons["draw"],
+                           "A": (1 - w) * pA + w * cons["away"]}
+                    s = sum(mix.values()) or 1.0
+                    pH, pD, pA = mix["H"] / s, mix["D"] / s, mix["A"] / s
+                    market_info = {"applied": True, "weight": w, "consensus": cons}
+                else:
+                    market_info = {"applied": False, "reason": mkt.get("reason", "unavailable")}
             return self._send({
                 "home": home, "away": away,
                 "eloHome": round(elo_h + ha, 1), "eloAway": round(elo_a, 1),
                 "expected": list(p.expected_score),
                 "mostLikely": list(p.most_likely_score),
-                "pHome": p.p_home_win, "pDraw": p.p_draw, "pAway": p.p_away_win,
+                "pHome": pH, "pDraw": pD, "pAway": pA,
                 "scorelines": [{"score": f"{i}-{j}", "p": pr}
                                for (i, j), pr in p.top_scorelines(8)],
-                "climate": climate_info, "ratings": breakdown,
+                "climate": climate_info, "ratings": breakdown, "market": market_info,
                 "handicap": handicap_mod.cover_table(p.scoreline_probs),
             })
 

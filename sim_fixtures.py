@@ -88,6 +88,7 @@ def simulate_all(n: int = 1000, elos: dict | None = None) -> dict:
     data/sim_ratings.json.
     """
     from model import expected_goals_calibrated, home_advantage
+    import context as ctx_mod
 
     if not elos:
         elos = {}
@@ -109,7 +110,9 @@ def simulate_all(n: int = 1000, elos: dict | None = None) -> dict:
 
     for fix in unplayed:
         h, a = fix["home"], fix["away"]
-        rh, ra = _elo(h), _elo(a)
+        cd = ctx_mod.context_delta(h, a, venue=fix.get("venue"),
+                                   match_date=fix.get("date"))
+        rh, ra = _elo(h) + cd["home"], _elo(a) + cd["away"]
         ha = home_advantage(h)
         lam_h, lam_a = expected_goals_calibrated(h, a, rh, ra, home_adv=ha)
 
