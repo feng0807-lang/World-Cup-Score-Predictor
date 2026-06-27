@@ -87,7 +87,7 @@ def simulate_all(n: int = 1000, elos: dict | None = None) -> dict:
     Returns per-fixture stats and writes expected team Elo deltas to
     data/sim_ratings.json.
     """
-    from model import expected_goals_calibrated
+    from model import expected_goals_calibrated, home_advantage
 
     if not elos:
         elos = {}
@@ -110,9 +110,10 @@ def simulate_all(n: int = 1000, elos: dict | None = None) -> dict:
     for fix in unplayed:
         h, a = fix["home"], fix["away"]
         rh, ra = _elo(h), _elo(a)
-        lam_h, lam_a = expected_goals_calibrated(h, a, rh, ra)
+        ha = home_advantage(h)
+        lam_h, lam_a = expected_goals_calibrated(h, a, rh, ra, home_adv=ha)
 
-        exp_h = 1.0 / (1.0 + 10 ** (-(rh - ra) / 400.0))
+        exp_h = 1.0 / (1.0 + 10 ** (-((rh + ha) - ra) / 400.0))
 
         wins_h = draws = wins_a = 0
         gh_total = ga_total = 0

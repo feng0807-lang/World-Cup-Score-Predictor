@@ -656,6 +656,7 @@ async function predict(){
       if(o.coach) parts.push(`coach ${o.coach>0?'+':''}${o.coach}`);
       if(o.sim) parts.push(`sim ${o.sim>0?'+':''}${o.sim}`);
       if(o.keyPlayer) parts.push(`<span style="color:#f85149">key player ${o.keyPlayer>0?'+':''}${o.keyPlayer}</span>`);
+      if(o.homeAdv) parts.push(`<span style="color:var(--acc2)">home +${o.homeAdv}</span>`);
       const adj=parts.length?` (${parts.join(', ')})`:'';
       return `${name}: base ${o.base} → <b>${o.effective}</b>${adj}`;
     };

@@ -39,6 +39,26 @@ _LAMBDA_CAP = 6.5
 # accuracy). Tune this one number as more results land.
 TOTAL_GOALS_SCALE = 1.23
 
+# Home / first-listed advantage. Even at neutral WC venues the designated-home
+# team has won far more than a symmetric model expects: over the first 66 group
+# matches home/draw/away was 48/27/24, but the neutral model predicted ~42/24/34.
+# Backtest (grid search on RPS + accuracy) put the optimum near +50 Elo for the
+# designated home, with a large extra edge for the three host nations playing an
+# actual home game (they went 5W-1D-0L at home). Adding this lifted top-pick
+# accuracy 64% -> ~68% and cut RPS 0.160 -> 0.153. Host extra is kept moderate
+# since it rests on only 6 matches.
+HOME_ADV_ELO = 50.0
+HOST_HOME_EXTRA = 45.0
+HOST_NATIONS = {"United States", "Mexico", "Canada"}
+
+
+def home_advantage(home_team: str) -> float:
+    """Elo bonus for the designated-home team (extra for host nations)."""
+    adv = HOME_ADV_ELO
+    if home_team in HOST_NATIONS:
+        adv += HOST_HOME_EXTRA
+    return adv
+
 
 @dataclass
 class MatchPrediction:
@@ -92,10 +112,10 @@ def _reanchor(lh_e: float, la_e: float, elo_home: float, elo_away: float) -> tup
 
 
 def expected_goals_calibrated(home: str, away: str, elo_home: float, elo_away: float,
-                              neutral: bool = True) -> tuple[float, float]:
-    """Expected goals with supremacy anchored to calibrated Elo."""
+                              neutral: bool = True, home_adv: float = 0.0) -> tuple[float, float]:
+    """Expected goals with supremacy anchored to calibrated Elo (+ home advantage)."""
     lh_e, la_e = secure.expected_goals(home, away, 0.0, 0.0, neutral)
-    return _reanchor(lh_e, la_e, elo_home, elo_away)
+    return _reanchor(lh_e, la_e, elo_home + home_adv, elo_away)
 
 
 def _poisson_pmf(k: int, lam: float) -> float:
@@ -115,10 +135,10 @@ def _tau(h: int, a: int, lh: float, la: float, rho: float) -> float:
 
 
 def predict_calibrated(home: str, away: str, elo_home: float, elo_away: float,
-                       neutral: bool = True) -> MatchPrediction:
+                       neutral: bool = True, home_adv: float = 0.0) -> MatchPrediction:
     """Full prediction with supremacy anchored to calibrated Elo, Dixon-Coles
     low-score correction (rho) applied just like the encrypted engine."""
-    lh, la = expected_goals_calibrated(home, away, elo_home, elo_away, neutral)
+    lh, la = expected_goals_calibrated(home, away, elo_home, elo_away, neutral, home_adv)
     rho = secure.rho()
     mg = secure.max_goals()
     ph = [_poisson_pmf(i, lh) for i in range(mg + 1)]

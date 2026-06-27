@@ -33,7 +33,7 @@ import coach as coach_mod
 import sim_fixtures as sim_mod
 import form as form_mod
 import keyplayers as kp_mod
-from model import predict_calibrated
+from model import predict_calibrated, home_advantage
 from tournament import run_simulation
 
 HERE = os.path.dirname(__file__)
@@ -84,7 +84,8 @@ def _elos_from_deltas(deltas: dict) -> dict[str, float]:
 
 def _odds_payload(home: str, away: str, blend: float | None):
     """Model probs vs market consensus, value edges, and optional blend."""
-    p = predict_calibrated(home, away, _calibrated_elo(home), _calibrated_elo(away))
+    p = predict_calibrated(home, away, _calibrated_elo(home), _calibrated_elo(away),
+                           home_adv=home_advantage(home))
     model = {"home": p.p_home_win, "draw": p.p_draw, "away": p.p_away_win}
     market = odds_mod.get_market(home, away)
 
@@ -226,22 +227,26 @@ class Handler(BaseHTTPRequestHandler):
             # Calibrated Elo drives supremacy (weather is a match-specific add-on).
             elo_h = _calibrated_elo(home) + wx_h
             elo_a = _calibrated_elo(away) + wx_a
-            p = predict_calibrated(home, away, elo_h, elo_a)
+            # Designated-home advantage (extra for host nations); skip if neutral asked.
+            ha = 0.0 if q.get("neutral", [""])[0] in ("1", "true") else home_advantage(home)
+            p = predict_calibrated(home, away, elo_h, elo_a, home_adv=ha)
             breakdown = {
                 "home": {"base": round(base_h, 1), "lineup": round(lin_h, 1),
                          "liveForm": round(live_h, 1), "weather": round(wx_h, 1),
                          "coach": round(coach_h, 1), "coachName": coach_mod.get(home)["name"],
                          "playerForm": round(frm_h, 1), "sim": round(sim_h, 1),
-                         "keyPlayer": round(kp_h, 1), "effective": round(elo_h, 1)},
+                         "keyPlayer": round(kp_h, 1), "homeAdv": round(ha, 1),
+                         "effective": round(elo_h + ha, 1)},
                 "away": {"base": round(base_a, 1), "lineup": round(lin_a, 1),
                          "liveForm": round(live_a, 1), "weather": round(wx_a, 1),
                          "coach": round(coach_a, 1), "coachName": coach_mod.get(away)["name"],
                          "playerForm": round(frm_a, 1), "sim": round(sim_a, 1),
-                         "keyPlayer": round(kp_a, 1), "effective": round(elo_a, 1)},
+                         "keyPlayer": round(kp_a, 1), "homeAdv": 0.0,
+                         "effective": round(elo_a, 1)},
             }
             return self._send({
                 "home": home, "away": away,
-                "eloHome": round(elo_h, 1), "eloAway": round(elo_a, 1),
+                "eloHome": round(elo_h + ha, 1), "eloAway": round(elo_a, 1),
                 "expected": list(p.expected_score),
                 "mostLikely": list(p.most_likely_score),
                 "pHome": p.p_home_win, "pDraw": p.p_draw, "pAway": p.p_away_win,
