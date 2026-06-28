@@ -98,40 +98,49 @@ def _model_probs(home: str, away: str, venue: str | None = None,
 
 
 def _road_to_final() -> dict:
-    """Full knockout projection: R32 -> Final. Each tie is predicted with the
-    model (neutral venue); the draw mass is split toward the stronger side
-    (ET/penalties) and the higher advance-probability team moves on."""
-    br = standings_mod.bracket()
-    pairs = [(t["a"], t["b"]) for t in br["r32"]]
+    """Full knockout tree on the OFFICIAL 2026 bracket (knockout.py). Each tie
+    uses the real result when the match has been played, otherwise a neutral
+    model projection (draw mass split toward the stronger side for ET/pens)."""
+    import knockout
 
-    def adv_prob(a: str, b: str) -> float:
+    # actual results keyed both ways, for filling in played ties
+    res = {}
+    for r in live_mod.results():
+        res[(r["home"], r["away"])] = (r["gh"], r["ga"])
+
+    def resolve(a: str, b: str) -> dict:
+        played = res.get((a, b))
+        flip = False
+        if played is None and res.get((b, a)) is not None:
+            played = res[(b, a)]; flip = True
+        if played is not None:
+            gh, ga = (played[1], played[0]) if flip else played
+            if gh != ga:                       # decisive in 90' (or recorded as such)
+                w = a if gh > ga else b
+                return {"a": a, "b": b, "pAdvA": 1.0 if w == a else 0.0,
+                        "pAdvB": 1.0 if w == b else 0.0, "winner": w,
+                        "played": True, "score": f"{gh}-{ga}"}
         mp = _model_probs(a, b, home_adv_on=False)
         pa, pd, pb = mp["home"], mp["draw"], mp["away"]
         denom = pa + pb or 1.0
-        return pa + pd * (pa / denom)          # a advances (90' + ET/pens)
+        padv = pa + pd * (pa / denom)
+        return {"a": a, "b": b, "pAdvA": round(padv, 3), "pAdvB": round(1 - padv, 3),
+                "winner": a if padv >= 0.5 else b, "played": False}
 
-    round_names = ["Round of 32", "Round of 16", "Quarter-finals",
-                   "Semi-finals", "Final"]
     rounds = []
-    current = pairs
-    for name in round_names:
-        ties = []
-        winners = []
-        for a, b in current:
-            pa = round(adv_prob(a, b), 3)
-            winner = a if pa >= 0.5 else b
-            ties.append({"a": a, "b": b, "pAdvA": pa, "pAdvB": round(1 - pa, 3),
-                         "winner": winner})
-            winners.append(winner)
-        rounds.append({"name": name, "ties": ties})
-        if len(winners) < 2:
-            break
-        current = list(zip(winners[0::2], winners[1::2]))
+    ties = [resolve(a, b) for a, b in knockout.R32]
+    rounds.append({"name": "Round of 32", "ties": ties})
+    winners = [t["winner"] for t in ties]
 
-    champion = rounds[-1]["ties"][0]["winner"] if rounds and rounds[-1]["ties"] else None
+    for name, mapping in knockout.ROUNDS:
+        ties = [resolve(winners[i - 1], winners[j - 1]) for i, j in mapping]
+        rounds.append({"name": name, "ties": ties})
+        winners = [t["winner"] for t in ties]
+
+    champion = winners[0] if winners else None
+    played = sum(1 for rd in rounds for t in rd["ties"] if t.get("played"))
     return {"rounds": rounds, "champion": champion,
-            "projected": br.get("projected", True),
-            "matchesPlayed": br.get("matchesPlayed", 0)}
+            "knockoutPlayed": played, "official": True}
 
 
 def _odds_payload(home: str, away: str, blend: float | None):

@@ -645,15 +645,17 @@ async function loadRoadToFinal(){
     const d=await (await fetch('/api/roadtofinal')).json();
     if(d.error){ box.innerHTML='<span class="muted">'+d.error+'</span>'; return; }
     $('#rtfChamp').innerHTML='Projected champion: <b class="starter">'+(d.champion||'—')+'</b>';
-    $('#rtfNote').textContent = d.projected
-      ? 'Group stage still in progress — R32 seeding will firm up as results land.'
-      : 'R32 is set. Each tie shows both sides’ chance to advance (90’ + ET/pens); the favoured team carries forward.';
+    $('#rtfNote').innerHTML = 'Official 2026 bracket (R32 from ESPN). '+
+      (d.knockoutPlayed?`<b>${d.knockoutPlayed}</b> ties played (actual results shown); `:'')+
+      'unplayed ties show each side’s chance to advance (90’ + ET/pens).';
     let cols=d.rounds.map(rd=>{
       const ties=rd.ties.map(t=>{
         const aw=t.pAdvA>=t.pAdvB, bw=!aw;
-        return `<div class="bk-tie">`+
-          `<div class="bk-tm ${aw?'win':'lose'}"><span>${t.a}</span><span>${(t.pAdvA*100).toFixed(0)}%</span></div>`+
-          `<div class="bk-tm ${bw?'win':'lose'}"><span>${t.b}</span><span>${(t.pAdvB*100).toFixed(0)}%</span></div>`+
+        const rcol=t.played?` title="result ${t.score}"`:'';
+        const tag=t.played?'✓':'';
+        return `<div class="bk-tie"${rcol}>`+
+          `<div class="bk-tm ${aw?'win':'lose'}"><span>${aw?tag:''}${t.a}</span><span>${t.played?(aw?'W':'-'):(t.pAdvA*100).toFixed(0)+'%'}</span></div>`+
+          `<div class="bk-tm ${bw?'win':'lose'}"><span>${bw?tag:''}${t.b}</span><span>${t.played?(bw?'W':'-'):(t.pAdvB*100).toFixed(0)+'%'}</span></div>`+
           `</div>`;
       }).join('');
       return `<div class="bk-col"><div class="bk-col-h">${rd.name}</div>${ties}</div>`;
