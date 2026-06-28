@@ -85,14 +85,53 @@ def _elos_from_deltas(deltas: dict) -> dict[str, float]:
 
 
 def _model_probs(home: str, away: str, venue: str | None = None,
-                 date: str | None = None) -> dict:
+                 date: str | None = None, home_adv_on: bool = True) -> dict:
     """The model's calibrated 1X2 for a matchup (home advantage + context, no
-    market blend) — the basis for value/EV comparison against bookmaker odds."""
+    market blend) — the basis for value/EV comparison against bookmaker odds.
+    Set home_adv_on=False for neutral knockout ties."""
     ctx = ctx_mod.context_delta(home, away, venue=venue, match_date=date)
     elo_h = _calibrated_elo(home) + ctx["home"]
     elo_a = _calibrated_elo(away) + ctx["away"]
-    p = predict_calibrated(home, away, elo_h, elo_a, home_adv=home_advantage(home))
+    ha = home_advantage(home) if home_adv_on else 0.0
+    p = predict_calibrated(home, away, elo_h, elo_a, home_adv=ha)
     return {"home": p.p_home_win, "draw": p.p_draw, "away": p.p_away_win}
+
+
+def _road_to_final() -> dict:
+    """Full knockout projection: R32 -> Final. Each tie is predicted with the
+    model (neutral venue); the draw mass is split toward the stronger side
+    (ET/penalties) and the higher advance-probability team moves on."""
+    br = standings_mod.bracket()
+    pairs = [(t["a"], t["b"]) for t in br["r32"]]
+
+    def adv_prob(a: str, b: str) -> float:
+        mp = _model_probs(a, b, home_adv_on=False)
+        pa, pd, pb = mp["home"], mp["draw"], mp["away"]
+        denom = pa + pb or 1.0
+        return pa + pd * (pa / denom)          # a advances (90' + ET/pens)
+
+    round_names = ["Round of 32", "Round of 16", "Quarter-finals",
+                   "Semi-finals", "Final"]
+    rounds = []
+    current = pairs
+    for name in round_names:
+        ties = []
+        winners = []
+        for a, b in current:
+            pa = round(adv_prob(a, b), 3)
+            winner = a if pa >= 0.5 else b
+            ties.append({"a": a, "b": b, "pAdvA": pa, "pAdvB": round(1 - pa, 3),
+                         "winner": winner})
+            winners.append(winner)
+        rounds.append({"name": name, "ties": ties})
+        if len(winners) < 2:
+            break
+        current = list(zip(winners[0::2], winners[1::2]))
+
+    champion = rounds[-1]["ties"][0]["winner"] if rounds and rounds[-1]["ties"] else None
+    return {"rounds": rounds, "champion": champion,
+            "projected": br.get("projected", True),
+            "matchesPlayed": br.get("matchesPlayed", 0)}
 
 
 def _odds_payload(home: str, away: str, blend: float | None):
@@ -380,6 +419,11 @@ class Handler(BaseHTTPRequestHandler):
                 "hasCacheData": bool(cache),
                 "players": detail,
             })
+
+        if path == "/api/roadtofinal":
+            if not secure.available():
+                return self._send({"error": "model_unavailable"}, 503)
+            return self._send(_road_to_final())
 
         if path == "/api/value":
             home, away = q.get("home", [""])[0], q.get("away", [""])[0]

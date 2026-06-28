@@ -66,9 +66,20 @@
     #liveCard{grid-column:1;grid-row:2}
     #oddsCard{grid-column:2;grid-row:2}
     #tab-tourney,#tab-standings{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
+    #tab-standings>.card:nth-child(3){grid-column:1/span 2}
     #tab-history{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
     #tab-history>.card:nth-child(3){grid-column:1/span 2}
   }
+  /* Road-to-final bracket */
+  .bk{display:flex;gap:14px;min-width:760px;padding:6px 2px}
+  .bk-col{display:flex;flex-direction:column;justify-content:space-around;flex:1;gap:6px;min-width:135px}
+  .bk-col-h{font-size:11px;color:var(--mut);text-align:center;margin-bottom:2px;text-transform:uppercase;letter-spacing:.5px}
+  .bk-tie{background:#0d1117;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-size:11px}
+  .bk-tm{display:flex;justify-content:space-between;gap:6px;padding:3px 7px}
+  .bk-tm+.bk-tm{border-top:1px solid var(--line)}
+  .bk-tm.win{color:var(--acc);font-weight:600;background:#0f1c12}
+  .bk-tm.lose{color:var(--mut)}
+  .bk-champ{align-self:center;justify-content:center}
 </style>
 </head>
 <body>
@@ -292,6 +303,16 @@
       <h2>Projected Round of 32</h2>
       <p class="note" id="bracketNote"></p>
       <div id="bracketBox" class="muted"></div>
+    </div>
+    <div class="card">
+      <h2>🏆 Road to the Final</h2>
+      <p class="note" id="rtfNote">Model projection of every knockout tie — each side's chance to
+        advance (90' + extra-time/penalties). The favoured team carries forward.</p>
+      <div class="row" style="margin-bottom:6px">
+        <button class="ghost" onclick="loadRoadToFinal()">⟳ Refresh tree</button>
+        <span id="rtfChamp" class="pill"></span>
+      </div>
+      <div id="rtfBracket" style="overflow-x:auto"></div>
     </div>
   </section>
 
@@ -562,7 +583,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   ['match','tourney','standings','lineup','history','simfix','bets'].forEach(name=>
     $('#tab-'+name).classList.toggle('hidden', name!==t.dataset.tab));
   if(t.dataset.tab==='history'){ loadHistory(); loadLiveRatings(); }
-  if(t.dataset.tab==='standings') loadStandings();
+  if(t.dataset.tab==='standings'){ loadStandings(); loadRoadToFinal(); }
   if(t.dataset.tab==='simfix') loadSimMeta();
   if(t.dataset.tab==='bets') loadLedger();
 });
@@ -614,6 +635,32 @@ async function loadLedger(){
       <td style="color:${col}">${b.status}</td><td class="num">${b.pnl==null?'':(b.pnl>=0?'+':'')+b.pnl}</td>
       <td><button class="ghost" style="font-size:11px" onclick="removeBet('${b.id}')">✕</button></td></tr>`;
   }).join('')||'<tr><td colspan="7" class="muted">No bets logged yet.</td></tr>';
+}
+
+async function loadRoadToFinal(){
+  const box=$('#rtfBracket');
+  try{
+    const d=await (await fetch('/api/roadtofinal')).json();
+    if(d.error){ box.innerHTML='<span class="muted">'+d.error+'</span>'; return; }
+    $('#rtfChamp').innerHTML='Projected champion: <b class="starter">'+(d.champion||'—')+'</b>';
+    $('#rtfNote').textContent = d.projected
+      ? 'Group stage still in progress — R32 seeding will firm up as results land.'
+      : 'R32 is set. Each tie shows both sides’ chance to advance (90’ + ET/pens); the favoured team carries forward.';
+    let cols=d.rounds.map(rd=>{
+      const ties=rd.ties.map(t=>{
+        const aw=t.pAdvA>=t.pAdvB, bw=!aw;
+        return `<div class="bk-tie">`+
+          `<div class="bk-tm ${aw?'win':'lose'}"><span>${t.a}</span><span>${(t.pAdvA*100).toFixed(0)}%</span></div>`+
+          `<div class="bk-tm ${bw?'win':'lose'}"><span>${t.b}</span><span>${(t.pAdvB*100).toFixed(0)}%</span></div>`+
+          `</div>`;
+      }).join('');
+      return `<div class="bk-col"><div class="bk-col-h">${rd.name}</div>${ties}</div>`;
+    }).join('');
+    // champion column
+    cols+=`<div class="bk-col"><div class="bk-col-h">Champion</div>`+
+          `<div class="bk-tie bk-champ"><div class="bk-tm win" style="padding:8px 10px">🏆 ${d.champion||'—'}</div></div></div>`;
+    box.innerHTML='<div class="bk">'+cols+'</div>';
+  }catch(e){ box.innerHTML='<span class="muted">Bracket unavailable.</span>'; }
 }
 
 async function loadSimMeta(){
