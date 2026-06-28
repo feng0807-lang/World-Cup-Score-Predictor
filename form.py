@@ -113,19 +113,20 @@ def _session() -> requests.Session:
 # ----------------------------------------------------------------- cache --
 
 def _load_cache() -> dict:
+    """Serve whatever form data is on disk. The TTL only decides when a refresh
+    is worthwhile (fetch_form force=True) — never blank the UI on staleness."""
     global _mem_cache, _mem_ts
     now = time.time()
     if _mem_cache and now - _mem_ts < CACHE_TTL:
         return _mem_cache
     if os.path.exists(CACHE_FILE):
-        with open(CACHE_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-        ts_str = data.get("ts", "")
-        if ts_str:
-            ts = datetime.fromisoformat(ts_str).replace(tzinfo=timezone.utc).timestamp()
-            if now - ts < CACHE_TTL:
-                _mem_cache, _mem_ts = data, now
-                return data
+        try:
+            with open(CACHE_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            _mem_cache, _mem_ts = data, now
+            return data
+        except Exception:
+            pass
     return {}
 
 

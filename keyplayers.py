@@ -74,6 +74,9 @@ _profiles_mem: dict | None = None
 # ----------------------------------------------------------------- cache --
 
 def _load_cache() -> dict:
+    """Return the cached analysis. The TTL only governs when a *refresh* is
+    worthwhile (analyze with force=True) — we always SERVE whatever is on disk
+    rather than blanking the UI when it's a few hours old."""
     global _mem, _mem_ts
     now = time.time()
     if _mem and now - _mem_ts < CACHE_TTL:
@@ -82,10 +85,8 @@ def _load_cache() -> dict:
         try:
             with open(CACHE_FILE, encoding="utf-8") as f:
                 data = json.load(f)
-            ts = datetime.fromisoformat(data.get("ts", "1970-01-01T00:00:00")).timestamp()
-            if now - ts < CACHE_TTL:
-                _mem, _mem_ts = data, now
-                return data
+            _mem, _mem_ts = data, now
+            return data
         except Exception:
             pass
     return {}
