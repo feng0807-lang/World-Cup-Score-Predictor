@@ -79,7 +79,9 @@
   .bk-tm+.bk-tm{border-top:1px solid var(--line)}
   .bk-tm.win{color:var(--acc);font-weight:600;background:#0f1c12}
   .bk-tm.lose{color:var(--mut)}
-  .bk-champ{align-self:center;justify-content:center}
+  .bk-trophy{border:2px solid var(--acc);border-radius:10px;background:#0f1c12;color:var(--acc);
+       font-weight:700;text-align:center;padding:14px 10px;font-size:13px}
+  .bk-trophy>div{font-size:13px}
 </style>
 </head>
 <body>
@@ -657,8 +659,8 @@ async function loadRoadToFinal(){
       return `<div class="bk-col"><div class="bk-col-h">${rd.name}</div>${ties}</div>`;
     }).join('');
     // champion column
-    cols+=`<div class="bk-col"><div class="bk-col-h">Champion</div>`+
-          `<div class="bk-tie bk-champ"><div class="bk-tm win" style="padding:8px 10px">🏆 ${d.champion||'—'}</div></div></div>`;
+    cols+=`<div class="bk-col" style="justify-content:center"><div class="bk-col-h">Champion</div>`+
+          `<div class="bk-trophy">🏆<div style="margin-top:4px">${d.champion||'—'}</div></div></div>`;
     box.innerHTML='<div class="bk">'+cols+'</div>';
   }catch(e){ box.innerHTML='<span class="muted">Bracket unavailable.</span>'; }
 }
