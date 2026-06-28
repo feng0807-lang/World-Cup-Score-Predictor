@@ -79,6 +79,8 @@
   .bk-tm+.bk-tm{border-top:1px solid var(--line)}
   .bk-tm.win{color:var(--acc);font-weight:600;background:#0f1c12}
   .bk-tm.lose{color:var(--mut)}
+  .bk-tie[onclick]:hover{border-color:var(--acc2);box-shadow:0 0 0 1px var(--acc2)}
+  .bk-score{text-align:center;font-size:10px;color:var(--mut);padding:1px 0;border-top:1px solid var(--line)}
   .bk-trophy{border:2px solid var(--acc);border-radius:10px;background:#0f1c12;color:var(--acc);
        font-weight:700;text-align:center;padding:14px 10px;font-size:13px}
   .bk-trophy>div{font-size:13px}
@@ -639,30 +641,48 @@ async function loadLedger(){
   }).join('')||'<tr><td colspan="7" class="muted">No bets logged yet.</td></tr>';
 }
 
+function sideRow(t, side){
+  const team = side==='a' ? t.a : t.b;
+  const padv = side==='a' ? t.pAdvA : t.pAdvB;
+  const isWin = t.played && t.winner===team;
+  const isLose = t.played && t.winner && t.winner!==team;
+  const cls = isWin?'win':(isLose?'lose':'');
+  let right='';
+  if(t.played) right = isWin?'✓':'';
+  else if(padv!=null) right = (padv*100).toFixed(0)+'%';
+  const nm = t.known ? team : `<span class="muted">${team}</span>`;
+  return `<div class="bk-tm ${cls}"><span>${nm}</span><span>${right}</span></div>`;
+}
+
+function predictFromBracket(a,b){
+  // jump to Match Predictor, load the two teams, run prediction
+  document.querySelector('.tab[data-tab="match"]').click();
+  $('#home').value=a; $('#away').value=b;
+  predict();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
 async function loadRoadToFinal(){
   const box=$('#rtfBracket');
   try{
     const d=await (await fetch('/api/roadtofinal')).json();
     if(d.error){ box.innerHTML='<span class="muted">'+d.error+'</span>'; return; }
-    $('#rtfChamp').innerHTML='Projected champion: <b class="starter">'+(d.champion||'—')+'</b>';
-    $('#rtfNote').innerHTML = 'Official 2026 bracket (R32 from ESPN). '+
-      (d.knockoutPlayed?`<b>${d.knockoutPlayed}</b> ties played (actual results shown); `:'')+
-      'unplayed ties show each side’s chance to advance (90’ + ET/pens).';
+    $('#rtfChamp').innerHTML = d.champion
+      ? '🏆 Champion: <b class="starter">'+d.champion+'</b>'
+      : `<span class="muted">${d.knockoutPlayed} of 31 knockout ties played</span>`;
+    $('#rtfNote').innerHTML = 'Official 2026 bracket from ESPN. Click any tie with both teams known '+
+      'to predict it. Played ties show the real score; teams fill in as you record results in History.';
     let cols=d.rounds.map(rd=>{
       const ties=rd.ties.map(t=>{
-        const aw=t.pAdvA>=t.pAdvB, bw=!aw;
-        const rcol=t.played?` title="result ${t.score}"`:'';
-        const tag=t.played?'✓':'';
-        return `<div class="bk-tie"${rcol}>`+
-          `<div class="bk-tm ${aw?'win':'lose'}"><span>${aw?tag:''}${t.a}</span><span>${t.played?(aw?'W':'-'):(t.pAdvA*100).toFixed(0)+'%'}</span></div>`+
-          `<div class="bk-tm ${bw?'win':'lose'}"><span>${bw?tag:''}${t.b}</span><span>${t.played?(bw?'W':'-'):(t.pAdvB*100).toFixed(0)+'%'}</span></div>`+
-          `</div>`;
+        const click = t.known ? ` onclick="predictFromBracket('${t.a.replace(/'/g,"\\'")}','${t.b.replace(/'/g,"\\'")}')" style="cursor:pointer"` : '';
+        const rowA = sideRow(t,'a'), rowB = sideRow(t,'b');
+        return `<div class="bk-tie"${click} title="${t.known?'click to predict':'awaiting earlier results'}">${rowA}${rowB}`+
+          (t.played?`<div class="bk-score">${t.score}</div>`:'')+`</div>`;
       }).join('');
       return `<div class="bk-col"><div class="bk-col-h">${rd.name}</div>${ties}</div>`;
     }).join('');
-    // champion column
     cols+=`<div class="bk-col" style="justify-content:center"><div class="bk-col-h">Champion</div>`+
-          `<div class="bk-trophy">🏆<div style="margin-top:4px">${d.champion||'—'}</div></div></div>`;
+          `<div class="bk-trophy">🏆<div style="margin-top:4px">${d.champion||'TBD'}</div></div></div>`;
     box.innerHTML='<div class="bk">'+cols+'</div>';
   }catch(e){ box.innerHTML='<span class="muted">Bracket unavailable.</span>'; }
 }

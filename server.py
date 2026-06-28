@@ -98,46 +98,63 @@ def _model_probs(home: str, away: str, venue: str | None = None,
 
 
 def _road_to_final() -> dict:
-    """Full knockout tree on the OFFICIAL 2026 bracket (knockout.py). Each tie
-    uses the real result when the match has been played, otherwise a neutral
-    model projection (draw mass split toward the stronger side for ET/pens)."""
+    """Live knockout bracket on the OFFICIAL 2026 draw (knockout.py).
+
+    A record-keeping tree: each tie fills with the REAL teams as earlier rounds
+    are decided, and shows the actual score once played. Later ties hold a
+    placeholder ("W R32-1") until their feeders are settled. Ties whose two
+    teams are both known carry a model advance-% as a *hint* — no team is
+    auto-advanced on projection, so no fabricated champion."""
     import knockout
 
-    # actual results keyed both ways, for filling in played ties
     res = {}
     for r in live_mod.results():
         res[(r["home"], r["away"])] = (r["gh"], r["ga"])
 
-    def resolve(a: str, b: str) -> dict:
-        played = res.get((a, b))
-        flip = False
-        if played is None and res.get((b, a)) is not None:
-            played = res[(b, a)]; flip = True
-        if played is not None:
-            gh, ga = (played[1], played[0]) if flip else played
-            if gh != ga:                       # decisive in 90' (or recorded as such)
-                w = a if gh > ga else b
-                return {"a": a, "b": b, "pAdvA": 1.0 if w == a else 0.0,
-                        "pAdvB": 1.0 if w == b else 0.0, "winner": w,
-                        "played": True, "score": f"{gh}-{ga}"}
-        mp = _model_probs(a, b, home_adv_on=False)
-        pa, pd, pb = mp["home"], mp["draw"], mp["away"]
-        denom = pa + pb or 1.0
-        padv = pa + pd * (pa / denom)
-        return {"a": a, "b": b, "pAdvA": round(padv, 3), "pAdvB": round(1 - padv, 3),
-                "winner": a if padv >= 0.5 else b, "played": False}
+    def result_for(a, b):
+        if (a, b) in res:
+            return res[(a, b)]
+        if (b, a) in res:
+            ga, gh = res[(b, a)]
+            return (gh, ga)
+        return None
+
+    def resolve(a, b):
+        _ph = ("R32-", "R16-", "QF-", "SF-", "F-")
+        known = not (a.startswith(_ph) or b.startswith(_ph))
+        tie = {"a": a, "b": b, "known": known, "played": False,
+               "winner": None, "score": None, "pAdvA": None, "pAdvB": None}
+        if not known:
+            return tie
+        played = result_for(a, b)
+        if played is not None and played[0] != played[1]:
+            gh, ga = played
+            tie["played"] = True
+            tie["score"] = f"{gh}-{ga}"
+            tie["winner"] = a if gh > ga else b
+        else:
+            mp = _model_probs(a, b, home_adv_on=False)
+            pa, pd, pb = mp["home"], mp["draw"], mp["away"]
+            denom = pa + pb or 1.0
+            padv = pa + pd * (pa / denom)
+            tie["pAdvA"] = round(padv, 3)
+            tie["pAdvB"] = round(1 - padv, 3)
+        return tie
 
     rounds = []
     ties = [resolve(a, b) for a, b in knockout.R32]
     rounds.append({"name": "Round of 32", "ties": ties})
-    winners = [t["winner"] for t in ties]
+    prev = [t["winner"] or f"R32-{i+1} W" for i, t in enumerate(ties)]
 
-    for name, mapping in knockout.ROUNDS:
-        ties = [resolve(winners[i - 1], winners[j - 1]) for i, j in mapping]
+    labels = ["R16", "QF", "SF", "F"]
+    for (name, mapping), lab in zip(knockout.ROUNDS, labels):
+        ties = []
+        for i, j in mapping:
+            ties.append(resolve(prev[i - 1], prev[j - 1]))
         rounds.append({"name": name, "ties": ties})
-        winners = [t["winner"] for t in ties]
+        prev = [t["winner"] or f"{lab}-{k+1} W" for k, t in enumerate(ties)]
 
-    champion = winners[0] if winners else None
+    champion = rounds[-1]["ties"][0]["winner"]   # only set once the final is played
     played = sum(1 for rd in rounds for t in rd["ties"] if t.get("played"))
     return {"rounds": rounds, "champion": champion,
             "knockoutPlayed": played, "official": True}
