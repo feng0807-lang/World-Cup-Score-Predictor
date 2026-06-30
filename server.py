@@ -648,8 +648,12 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/update_lineups":
             try:
                 import update_lineups
-                summary = update_lineups.update_squads(SQUADS, verbose=False)
-                return self._send({"ok": True, **summary})
+                if body.get("mode") == "firstxi":
+                    summary = update_lineups.set_first_xi(SQUADS, verbose=False)
+                else:
+                    summary = update_lineups.update_squads(SQUADS, verbose=False)
+                return self._send({"ok": True, "mode": body.get("mode", "latest"),
+                                   **summary})
             except Exception as e:
                 return self._send({"ok": False, "error": str(e)}, 500)
 

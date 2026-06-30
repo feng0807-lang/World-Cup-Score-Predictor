@@ -179,5 +179,107 @@ def update_squads(squads=None, verbose=True):
     }
 
 
+def _collect_start_counts():
+    """team -> {player_name: starts} across every completed match, plus the most
+    recent number/pos seen for each player."""
+    from collections import defaultdict
+    sess = form._session()
+    counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    meta: dict[str, dict[str, dict]] = defaultdict(dict)
+    today = datetime.utcnow()
+    cur = form.WC_START
+    while cur.date() <= today.date():
+        ds = cur.strftime("%Y%m%d")
+        try:
+            events = form._events_for_date(sess, ds)
+        except Exception:
+            cur += timedelta(days=1); continue
+        for ev in events:
+            if ev["status"] != "STATUS_FULL_TIME":
+                continue
+            try:
+                rosters = sess.get(f"{form.ESPN_SUMMARY}?event={ev['id']}",
+                                   timeout=12).json().get("rosters", [])
+            except Exception:
+                continue
+            for rt in rosters:
+                team = form._canonical_team(rt.get("team", {}).get("displayName", ""))
+                for entry in rt.get("roster", []):
+                    if not entry.get("starter"):
+                        continue
+                    nm = entry.get("athlete", {}).get("displayName", "")
+                    if not nm:
+                        continue
+                    counts[team][nm] += 1
+                    pos = entry.get("position") or {}
+                    meta[team][nm] = {"number": int(entry.get("jersey") or 0),
+                                      "pos": _espn_pos_to_squad(pos.get("abbreviation", ""))}
+        cur += timedelta(days=1)
+    return counts, meta
+
+
+def set_first_xi(squads=None, verbose=True):
+    """Set every team's starting XI to its FIRST-CHOICE eleven — the 11 players
+    who started the most across the tournament — and reset base_avg so that XI
+    reads as full strength (lineup delta 0). Run after group play to undo any
+    dead-rubber rotation in the latest-match lineups."""
+    if squads is None:
+        squads = squads_mod.load_squads()
+    counts, meta = _collect_start_counts()
+    updated, added_rep = 0, []
+    for team, sq in squads.items():
+        cnt = counts.get(team)
+        if not cnt:
+            continue
+        players = sq["players"]
+        # the most-started 11 (tie-break: keep ESPN order stable)
+        top11 = [nm for nm, _ in sorted(cnt.items(), key=lambda x: -x[1])[:11]]
+        for p in players:
+            p["starter"] = False
+        starter_avg = (sum(p["rating"] for p in players) / max(1, len(players)))
+        matched = set()
+        for nm in top11:
+            best, sim = None, 0.0
+            for p in players:
+                if p["id"] in matched:
+                    continue
+                s = form._name_sim(nm, p["name"])
+                if s > sim:
+                    best, sim = p, s
+            m = meta[team].get(nm, {})
+            if best is not None and sim >= NAME_SIM_THRESHOLD:
+                best["starter"] = True
+                best["available"] = True
+                if m.get("number"):
+                    best["number"] = m["number"]
+                if m.get("pos"):
+                    best["pos"] = m["pos"]
+                matched.add(best["id"])
+            else:
+                nid = max((p["id"] for p in players), default=-1) + 1
+                players.append({"id": nid, "number": m.get("number", 0), "name": nm,
+                                "pos": m.get("pos", "MID"), "rating": round(starter_avg),
+                                "starter": True, "available": True})
+                matched.add(nid)
+                added_rep.append(f"{team}: +{nm}")
+        # rebaseline: the first XI is now full strength -> lineup delta 0
+        starters = [p for p in players if p["starter"]]
+        if starters:
+            sq["base_avg"] = round(sum(p["rating"] for p in starters) / len(starters), 2)
+        n = len(starters)
+        if verbose:
+            print(f"  {team:<24} first XI ({n}), eff Elo {squads_mod.effective_elo(sq)}"
+                  + ("" if n == 11 else f"  <-- {n}!"))
+        updated += 1
+    squads_mod.save_squads(squads)
+    if verbose:
+        print(f"\nSet first XI for {updated} teams; new players: {len(added_rep)}")
+    return {"teamsUpdated": updated, "newPlayers": added_rep}
+
+
 if __name__ == "__main__":
-    update_squads()
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "firstxi":
+        set_first_xi()
+    else:
+        update_squads()

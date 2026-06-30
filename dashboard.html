@@ -392,7 +392,8 @@
         <span class="pill">Form Δ: <b id="formDelta" class="starter">–</b></span>
         <button onclick="saveSquad()">Save lineup</button>
         <button class="ghost" onclick="refreshForm()" id="formRefreshBtn">↻ Fetch player form</button>
-        <button class="ghost" onclick="updateLineups()" id="lineupBtn">⟳ Update all XIs from ESPN</button>
+        <button class="ghost" onclick="updateLineups()" id="lineupBtn">⟳ Update all XIs (latest match)</button>
+        <button class="ghost" onclick="updateLineups('firstxi')" id="firstXiBtn">↺ Reset all to first XI</button>
         <span id="formStatus" class="muted" style="font-size:12px"></span>
         <span id="saveStatus" class="spin"></span>
       </div>
@@ -1210,13 +1211,13 @@ async function refreshForm(){
   finally{ $('#formRefreshBtn').disabled=false; }
 }
 
-async function updateLineups(){
-  const btn=$('#lineupBtn'); btn.disabled=true;
-  $('#formStatus').textContent='updating XIs from ESPN… (may take ~30s)';
+async function updateLineups(mode){
+  const btn=$(mode==='firstxi'?'#firstXiBtn':'#lineupBtn'); btn.disabled=true;
+  $('#formStatus').textContent=(mode==='firstxi'?'resetting to first-choice XIs':'updating XIs from ESPN')+'… (~30s)';
   try{
-    const d=await (await fetch('/api/update_lineups',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+    const d=await (await fetch('/api/update_lineups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:mode||'latest'})})).json();
     if(d.ok){
-      let msg=`✓ ${d.teamsUpdated} XIs updated from ${d.rostersFound} rosters`;
+      let msg=`✓ ${d.teamsUpdated} XIs updated`+(d.rostersFound?` from ${d.rostersFound} rosters`:' to first-choice XI');
       if(d.newPlayers&&d.newPlayers.length) msg+=` · +${d.newPlayers.length} new`;
       if(d.incomplete&&d.incomplete.length) msg+=` · ⚠ incomplete: ${d.incomplete.join(', ')}`;
       $('#formStatus').textContent=msg;
