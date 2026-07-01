@@ -107,32 +107,33 @@ def _road_to_final() -> dict:
     auto-advanced on projection, so no fabricated champion."""
     import knockout
 
-    res = {}
-    for r in live_mod.results():
-        res[(r["home"], r["away"])] = (r["gh"], r["ga"])
+    ko = knockout.live_results()   # ESPN knockout results (winner flag = pens-aware)
 
-    def result_for(a, b):
-        if (a, b) in res:
-            return res[(a, b)]
-        if (b, a) in res:
-            ga, gh = res[(b, a)]
-            return (gh, ga)
-        return None
+    # Record decided knockout results into the Elo ledger (deduped by event id).
+    existing = {r["key"] for r in live_mod.results()}
+    for (a, b), rec in ko.items():
+        if rec["winner"] and rec["state"] == "post" and rec["id"] not in existing:
+            live_mod.record_result(a, b, rec["gh"], rec["ga"], neutral=True,
+                                   source="espn-ko", ext_id=rec["id"])
+            existing.add(rec["id"])
 
     def resolve(a, b):
         _ph = ("R32-", "R16-", "QF-", "SF-", "F-")
         known = not (a.startswith(_ph) or b.startswith(_ph))
-        tie = {"a": a, "b": b, "known": known, "played": False,
+        tie = {"a": a, "b": b, "known": known, "played": False, "live": False,
                "winner": None, "score": None, "pAdvA": None, "pAdvB": None}
         if not known:
             return tie
-        played = result_for(a, b)
-        if played is not None and played[0] != played[1]:
-            gh, ga = played
+        rec = ko.get((a, b))
+        if rec and rec["winner"]:                       # decided (incl. penalties)
             tie["played"] = True
-            tie["score"] = f"{gh}-{ga}"
-            tie["winner"] = a if gh > ga else b
-        else:
+            tie["winner"] = rec["winner"]
+            pens = " (pens)" if rec["gh"] == rec["ga"] else ""
+            tie["score"] = f"{rec['gh']}-{rec['ga']}{pens}"
+        elif rec and rec["state"] == "in":              # in progress — show live score
+            tie["live"] = True
+            tie["score"] = f"{rec['gh']}-{rec['ga']}"
+        if not tie["played"]:
             mp = _model_probs(a, b, home_adv_on=False)
             pa, pd, pb = mp["home"], mp["draw"], mp["away"]
             denom = pa + pb or 1.0

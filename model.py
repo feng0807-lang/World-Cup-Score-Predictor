@@ -39,16 +39,10 @@ _LAMBDA_CAP = 6.5
 # accuracy). Tune this one number as more results land.
 TOTAL_GOALS_SCALE = 1.23
 
-# Home / first-listed advantage. Even at neutral WC venues the designated-home
-# team has won far more than a symmetric model expects: over the first 66 group
-# matches home/draw/away was 48/27/24, but the neutral model predicted ~42/24/34.
-# Backtest (grid search on RPS + accuracy) put the optimum near +50 Elo for the
-# designated home, with a large extra edge for the three host nations playing an
-# actual home game (they went 5W-1D-0L at home). Adding this lifted top-pick
-# accuracy 64% -> ~68% and cut RPS 0.160 -> 0.153. Host extra is kept moderate
-# since it rests on only 6 matches.
-HOME_ADV_ELO = 50.0
-HOST_HOME_EXTRA = 45.0
+# Home advantage. WC2026 is at neutral venues, so ONLY the three host nations
+# (USA / Mexico / Canada) get a real home edge — and they did, going 5W-1D-0L at
+# home in the group stage. Every other designated-home team gets nothing.
+HOST_HOME_ELO = 90.0
 HOST_NATIONS = {"United States", "Mexico", "Canada"}
 
 # 1X2 calibration corrections (see _calibrate_1x2). Backtested on the group stage:
@@ -61,11 +55,8 @@ PROB_TEMPERATURE = 0.90      # <1 sharpens toward the favourite (gentle)
 
 
 def home_advantage(home_team: str) -> float:
-    """Elo bonus for the designated-home team (extra for host nations)."""
-    adv = HOME_ADV_ELO
-    if home_team in HOST_NATIONS:
-        adv += HOST_HOME_EXTRA
-    return adv
+    """Elo bonus — host nations only; zero for everyone else (neutral venues)."""
+    return HOST_HOME_ELO if home_team in HOST_NATIONS else 0.0
 
 
 @dataclass

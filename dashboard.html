@@ -81,6 +81,7 @@
   .bk-tm.lose{color:var(--mut)}
   .bk-tie[onclick]:hover{border-color:var(--acc2);box-shadow:0 0 0 1px var(--acc2)}
   .bk-score{text-align:center;font-size:10px;color:var(--mut);padding:1px 0;border-top:1px solid var(--line)}
+  .bk-score.bk-live{color:#f85149;font-weight:600}
   .bk-trophy{border:2px solid var(--acc);border-radius:10px;background:#0f1c12;color:var(--acc);
        font-weight:700;text-align:center;padding:14px 10px;font-size:13px}
   .bk-trophy>div{font-size:13px}
@@ -677,8 +678,9 @@ async function loadRoadToFinal(){
       const ties=rd.ties.map(t=>{
         const click = t.known ? ` onclick="predictFromBracket('${t.a.replace(/'/g,"\\'")}','${t.b.replace(/'/g,"\\'")}')" style="cursor:pointer"` : '';
         const rowA = sideRow(t,'a'), rowB = sideRow(t,'b');
-        return `<div class="bk-tie"${click} title="${t.known?'click to predict':'awaiting earlier results'}">${rowA}${rowB}`+
-          (t.played?`<div class="bk-score">${t.score}</div>`:'')+`</div>`;
+        const scoreBar = t.played ? `<div class="bk-score">${t.score}</div>`
+          : (t.live ? `<div class="bk-score bk-live">${t.score} · LIVE</div>` : '');
+        return `<div class="bk-tie"${click} title="${t.known?'click to predict':'awaiting earlier results'}">${rowA}${rowB}${scoreBar}</div>`;
       }).join('');
       return `<div class="bk-col"><div class="bk-col-h">${rd.name}</div>${ties}</div>`;
     }).join('');
