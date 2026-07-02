@@ -33,6 +33,19 @@
       "age": 25, "role": "Forward",
       "status": "fit", "adj": 0,
       "note": "No fitness issues; but Brazil's attacking depth is thin - Rodrygo (ACL) and Estêvão out, Neymar conditioning uncertain"
+    },
+    "Lucas Paquetá": {
+      "age": 27, "role": "Midfielder (starter)",
+      "key": true, "dependency": 0.09, "adj": -6,
+      "status": "doubtful for R16",
+      "note": "Thigh muscle injury suffered vs Japan in R32 (2-1 win); CBF gave no recovery timeline. Forced into the core group (organic dependency was already 6.3% on 1G 2A) so his doubt registers as real risk without inflating him. Still listed as a starter pending official confirmation - not benched."
+    }
+  },
+  "Egypt": {
+    "Mohamed Salah": {
+      "age": 34, "role": "Captain / forward (starter)",
+      "status": "recovering, expected fit", "adj": -3,
+      "note": "Left knee/hamstring issue vs Iran (1-1, group finale), left field in the 57th minute. Coach Hossam Hassan expects him fit for the knockouts given the recovery gap. Small penalty for lingering doubt, not benched."
     }
   }
 }
