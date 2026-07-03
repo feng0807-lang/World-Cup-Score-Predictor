@@ -53,6 +53,26 @@ DRAW_BOOST = 0.20            # max draw uplift in a dead-even match
 DRAW_CLOSENESS_SCALE = 0.7   # boost fades to 0 once |lambda diff| reaches this
 PROB_TEMPERATURE = 0.90      # <1 sharpens toward the favourite (gentle)
 
+# Knockout-stage corrections, calibrated on the 13 played R32 ties:
+#  * goals ran BELOW the group-calibrated model (actual 2.62/match vs model
+#    2.81, ratio 0.93) — knockouts are tighter. Damped factor closes ~70%.
+#  * the tight-game draw boost was fit on group games, where evenly-matched
+#    sides often settle for a point; in knockouts nobody settles (a draw only
+#    buys extra time), and observed 90' draws ran below the boosted model.
+#    Halve the boost for knockout ties.
+KNOCKOUT_GOALS_FACTOR = 0.95
+KNOCKOUT_DRAW_BOOST = 0.10
+
+# Extra-time / penalties split for advance probability. Historically ~half of
+# level-after-90 knockout ties are decided in extra time (where the stronger
+# side keeps a REDUCED edge — tired legs compress skill) and the rest go to
+# penalties, which are effectively a coin flip. The old formula credited the
+# favourite with its full strength ratio across the whole draw branch, which
+# overstated favourites: both R32 shootouts (Germany 76%, Netherlands 62%)
+# were lost by the model's favourite.
+ET_DECIDED_SHARE = 0.55      # share of 90' draws settled in extra time
+ET_EDGE_RETENTION = 0.60     # how much of the strength edge survives into ET
+
 
 def home_advantage(home_team: str) -> float:
     """Elo bonus — host nations only; zero for everyone else (neutral venues)."""
@@ -100,9 +120,12 @@ def predict_match(home: str, away: str, delta_home: float = 0.0,
 
 # --- Calibrated-Elo prediction path ------------------------------------------
 
-def _reanchor(lh_e: float, la_e: float, elo_home: float, elo_away: float) -> tuple[float, float]:
+def _reanchor(lh_e: float, la_e: float, elo_home: float, elo_away: float,
+              knockout: bool = False) -> tuple[float, float]:
     """Recombine the (scaled) encrypted total-goals with calibrated-Elo supremacy."""
     total = (lh_e + la_e) * TOTAL_GOALS_SCALE
+    if knockout:
+        total *= KNOCKOUT_GOALS_FACTOR
     sup = (SUPREMACY_ELO_WEIGHT * GOALS_PER_ELO * (elo_home - elo_away)
            + (1.0 - SUPREMACY_ELO_WEIGHT) * (lh_e - la_e))
     lh = max(0.05, min((total + sup) / 2.0, _LAMBDA_CAP))
@@ -111,10 +134,11 @@ def _reanchor(lh_e: float, la_e: float, elo_home: float, elo_away: float) -> tup
 
 
 def expected_goals_calibrated(home: str, away: str, elo_home: float, elo_away: float,
-                              neutral: bool = True, home_adv: float = 0.0) -> tuple[float, float]:
+                              neutral: bool = True, home_adv: float = 0.0,
+                              knockout: bool = False) -> tuple[float, float]:
     """Expected goals with supremacy anchored to calibrated Elo (+ home advantage)."""
     lh_e, la_e = secure.expected_goals(home, away, 0.0, 0.0, neutral)
-    return _reanchor(lh_e, la_e, elo_home + home_adv, elo_away)
+    return _reanchor(lh_e, la_e, elo_home + home_adv, elo_away, knockout)
 
 
 def _poisson_pmf(k: int, lam: float) -> float:
@@ -134,10 +158,12 @@ def _tau(h: int, a: int, lh: float, la: float, rho: float) -> float:
 
 
 def predict_calibrated(home: str, away: str, elo_home: float, elo_away: float,
-                       neutral: bool = True, home_adv: float = 0.0) -> MatchPrediction:
+                       neutral: bool = True, home_adv: float = 0.0,
+                       knockout: bool = False) -> MatchPrediction:
     """Full prediction with supremacy anchored to calibrated Elo, Dixon-Coles
     low-score correction (rho) applied just like the encrypted engine."""
-    lh, la = expected_goals_calibrated(home, away, elo_home, elo_away, neutral, home_adv)
+    lh, la = expected_goals_calibrated(home, away, elo_home, elo_away, neutral,
+                                       home_adv, knockout)
     rho = secure.rho()
     mg = secure.max_goals()
     ph = [_poisson_pmf(i, lh) for i in range(mg + 1)]
@@ -162,7 +188,8 @@ def predict_calibrated(home: str, away: str, elo_home: float, elo_away: float,
 
     # 1X2 calibration (applied to the headline result probs only; the scoreline
     # grid above stays the raw model, for AH/OU/correct-score markets):
-    p_home, p_draw, p_away = _calibrate_1x2(p_home, p_draw, p_away, abs(lh - la))
+    boost = KNOCKOUT_DRAW_BOOST if knockout else DRAW_BOOST
+    p_home, p_draw, p_away = _calibrate_1x2(p_home, p_draw, p_away, abs(lh - la), boost)
 
     return MatchPrediction(
         home=home, away=away, lambda_home=lh, lambda_away=la,
@@ -171,19 +198,21 @@ def predict_calibrated(home: str, away: str, elo_home: float, elo_away: float,
     )
 
 
-def _calibrate_1x2(ph: float, pd: float, pa: float, supremacy: float) -> tuple[float, float, float]:
+def _calibrate_1x2(ph: float, pd: float, pa: float, supremacy: float,
+                   draw_boost: float = DRAW_BOOST) -> tuple[float, float, float]:
     """Two empirical corrections found by backtesting the group stage:
 
     1. Tight-game draw uplift. Evenly-matched games end level far more often than
        independent Poisson (even with Dixon-Coles rho) predicts: in matches with
        |lambda diff| < ~0.4 the actual draw rate was 40% vs 27% modelled, and draw
        was in fact the single most likely outcome there. Boost the draw, fading to
-       zero as the match gets one-sided.
+       zero as the match gets one-sided. (Halved for knockouts, where nobody
+       settles for a point — see KNOCKOUT_DRAW_BOOST.)
     2. Mild confidence sharpening. Favourites won slightly more than their stated
        probability (model was a touch under-confident), so sharpen toward the
        leader. Kept gentle (T just under 1) to avoid over-fitting the sample.
     """
-    b = DRAW_BOOST * max(0.0, 1.0 - supremacy / DRAW_CLOSENESS_SCALE)
+    b = draw_boost * max(0.0, 1.0 - supremacy / DRAW_CLOSENESS_SCALE)
     pd = pd + b * (ph + pa)
     ph *= (1.0 - b)
     pa *= (1.0 - b)
@@ -192,3 +221,19 @@ def _calibrate_1x2(ph: float, pd: float, pa: float, supremacy: float) -> tuple[f
     ph, pd, pa = ph ** inv, pd ** inv, pa ** inv
     s = ph + pd + pa
     return ph / s, pd / s, pa / s
+
+
+def advance_probability(p_win: float, p_draw: float, p_lose: float) -> float:
+    """P(team advances a knockout tie) given its 90-minute win/draw/loss probs.
+
+    The draw branch is NOT resolved at full strength: ~ET_DECIDED_SHARE of level
+    ties are settled in extra time, where only ET_EDGE_RETENTION of the strength
+    edge survives (tired legs compress skill); the rest go to penalties, treated
+    as a coin flip. Both R32 shootouts were lost by the model's favourite under
+    the old full-strength split (Germany 76%, Netherlands 62% to advance).
+    """
+    denom = p_win + p_lose
+    strength = p_win / denom if denom > 0 else 0.5
+    p_et = 0.5 + ET_EDGE_RETENTION * (strength - 0.5)
+    draw_credit = ET_DECIDED_SHARE * p_et + (1.0 - ET_DECIDED_SHARE) * 0.5
+    return p_win + p_draw * draw_credit

@@ -35,7 +35,7 @@ import form as form_mod
 import keyplayers as kp_mod
 import context as ctx_mod
 import valuebets as vb_mod
-from model import predict_calibrated, home_advantage
+from model import predict_calibrated, home_advantage, advance_probability
 from tournament import run_simulation
 
 HERE = os.path.dirname(__file__)
@@ -85,15 +85,17 @@ def _elos_from_deltas(deltas: dict) -> dict[str, float]:
 
 
 def _model_probs(home: str, away: str, venue: str | None = None,
-                 date: str | None = None, home_adv_on: bool = True) -> dict:
+                 date: str | None = None, home_adv_on: bool = True,
+                 knockout: bool = False) -> dict:
     """The model's calibrated 1X2 for a matchup (home advantage + context, no
     market blend) — the basis for value/EV comparison against bookmaker odds.
-    Set home_adv_on=False for neutral knockout ties."""
+    Set home_adv_on=False for neutral knockout ties; knockout=True applies the
+    tighter knockout goal/draw calibration."""
     ctx = ctx_mod.context_delta(home, away, venue=venue, match_date=date)
     elo_h = _calibrated_elo(home) + ctx["home"]
     elo_a = _calibrated_elo(away) + ctx["away"]
     ha = home_advantage(home) if home_adv_on else 0.0
-    p = predict_calibrated(home, away, elo_h, elo_a, home_adv=ha)
+    p = predict_calibrated(home, away, elo_h, elo_a, home_adv=ha, knockout=knockout)
     return {"home": p.p_home_win, "draw": p.p_draw, "away": p.p_away_win}
 
 
@@ -134,10 +136,8 @@ def _road_to_final() -> dict:
             tie["live"] = True
             tie["score"] = f"{rec['gh']}-{rec['ga']}"
         if not tie["played"]:
-            mp = _model_probs(a, b, home_adv_on=False)
-            pa, pd, pb = mp["home"], mp["draw"], mp["away"]
-            denom = pa + pb or 1.0
-            padv = pa + pd * (pa / denom)
+            mp = _model_probs(a, b, home_adv_on=False, knockout=True)
+            padv = advance_probability(mp["home"], mp["draw"], mp["away"])
             tie["pAdvA"] = round(padv, 3)
             tie["pAdvB"] = round(1 - padv, 3)
         return tie
@@ -309,9 +309,13 @@ class Handler(BaseHTTPRequestHandler):
             # Calibrated Elo drives supremacy (weather + context are add-ons).
             elo_h = _calibrated_elo(home) + wx_h + ctx["home"]
             elo_a = _calibrated_elo(away) + wx_a + ctx["away"]
-            # Designated-home advantage (extra for host nations); skip if neutral asked.
-            ha = 0.0 if q.get("neutral", [""])[0] in ("1", "true") else home_advantage(home)
-            p = predict_calibrated(home, away, elo_h, elo_a, home_adv=ha)
+            # Host home advantage; skip if neutral asked. ?ko=1 (or neutral=1,
+            # since only knockout ties are queried neutral now) applies the
+            # tighter knockout goal/draw calibration.
+            is_neutral = q.get("neutral", [""])[0] in ("1", "true")
+            is_ko = is_neutral or q.get("ko", [""])[0] in ("1", "true")
+            ha = 0.0 if is_neutral else home_advantage(home)
+            p = predict_calibrated(home, away, elo_h, elo_a, home_adv=ha, knockout=is_ko)
             breakdown = {
                 "home": {"base": round(base_h, 1), "lineup": round(lin_h, 1),
                          "liveForm": round(live_h, 1), "weather": round(wx_h, 1),
