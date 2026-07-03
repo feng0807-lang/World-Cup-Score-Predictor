@@ -33,6 +33,34 @@ REST_ELO_PER_DAY = 4.0        # Elo per day of rest advantage over the opponent
 REST_DIFF_CAP_DAYS = 6        # ignore differentials beyond this many days
 REST_MAX = 24.0               # cap on the rest Elo swing
 
+# Which host nation each venue city belongs to — a host playing at one of its
+# own cities is genuinely at home even in the knockouts.
+VENUE_NATION = {
+    "Mexico City": "Mexico", "Guadalajara": "Mexico", "Monterrey": "Mexico",
+    "Toronto": "Canada", "Vancouver": "Canada",
+    "Atlanta": "United States", "Boston (Foxborough)": "United States",
+    "Dallas (Arlington)": "United States", "Houston": "United States",
+    "Kansas City": "United States", "Los Angeles": "United States",
+    "Miami": "United States", "New York/New Jersey": "United States",
+    "Philadelphia": "United States", "San Francisco Bay": "United States",
+    "Seattle": "United States",
+}
+
+
+def venue_host(venue_city: str | None) -> str | None:
+    """The host nation whose country this venue is in (None if unknown)."""
+    return VENUE_NATION.get(venue_city or "")
+
+
+def rest_swing(rest_a: int | None, rest_b: int | None) -> tuple[float, float]:
+    """Symmetric Elo swing from a rest-day differential (a-positive means a
+    is fresher). Returns (delta_a, delta_b)."""
+    if rest_a is None or rest_b is None:
+        return 0.0, 0.0
+    diff = max(-REST_DIFF_CAP_DAYS, min(REST_DIFF_CAP_DAYS, rest_a - rest_b))
+    swing = max(-REST_MAX, min(REST_MAX, REST_ELO_PER_DAY * diff))
+    return swing / 2.0, -swing / 2.0
+
 
 def _team_match_dates(team: str) -> list[datetime]:
     out = []

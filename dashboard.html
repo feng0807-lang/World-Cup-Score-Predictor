@@ -680,7 +680,10 @@ async function loadRoadToFinal(){
         const rowA = sideRow(t,'a'), rowB = sideRow(t,'b');
         const scoreBar = t.played ? `<div class="bk-score">${t.score}</div>`
           : (t.live ? `<div class="bk-score bk-live">${t.score} · LIVE</div>` : '');
-        return `<div class="bk-tie"${click} title="${t.known?'click to predict':'awaiting earlier results'}">${rowA}${rowB}${scoreBar}</div>`;
+        let tip = t.known ? 'click to predict' : 'awaiting earlier results';
+        if (t.venue) tip += ` · ${t.venue}`;
+        if (t.restA != null && t.restB != null) tip += ` · rest ${t.a} ${t.restA}d / ${t.b} ${t.restB}d`;
+        return `<div class="bk-tie"${click} title="${tip}">${rowA}${rowB}${scoreBar}</div>`;
       }).join('');
       return `<div class="bk-col"><div class="bk-col-h">${rd.name}</div>${ties}</div>`;
     }).join('');

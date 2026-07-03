@@ -14,6 +14,7 @@ Endpoints
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -86,14 +87,16 @@ def _elos_from_deltas(deltas: dict) -> dict[str, float]:
 
 def _model_probs(home: str, away: str, venue: str | None = None,
                  date: str | None = None, home_adv_on: bool = True,
-                 knockout: bool = False) -> dict:
+                 knockout: bool = False, extra_h: float = 0.0,
+                 extra_a: float = 0.0) -> dict:
     """The model's calibrated 1X2 for a matchup (home advantage + context, no
     market blend) — the basis for value/EV comparison against bookmaker odds.
     Set home_adv_on=False for neutral knockout ties; knockout=True applies the
-    tighter knockout goal/draw calibration."""
+    tighter knockout goal/draw calibration. extra_h/extra_a carry match-specific
+    Elo adjustments computed by the caller (venue-host bonus, rest swing)."""
     ctx = ctx_mod.context_delta(home, away, venue=venue, match_date=date)
-    elo_h = _calibrated_elo(home) + ctx["home"]
-    elo_a = _calibrated_elo(away) + ctx["away"]
+    elo_h = _calibrated_elo(home) + ctx["home"] + extra_h
+    elo_a = _calibrated_elo(away) + ctx["away"] + extra_a
     ha = home_advantage(home) if home_adv_on else 0.0
     p = predict_calibrated(home, away, elo_h, elo_a, home_adv=ha, knockout=knockout)
     return {"home": p.p_home_win, "draw": p.p_draw, "away": p.p_away_win}
@@ -119,14 +122,53 @@ def _road_to_final() -> dict:
                                    source="espn-ko", ext_id=rec["id"])
             existing.add(rec["id"])
 
+    # ESPN stadium name -> our venue-city key (normalised containment match).
+    def _norm(s):
+        return "".join(c for c in s.lower() if c.isalnum())
+    _stad2city = {_norm(stad): city for city, stad in climate_mod.STADIUM.items()}
+
+    def stadium_city(name):
+        if not name:
+            return None
+        n = _norm(name)
+        for stad_n, city in _stad2city.items():
+            if stad_n in n or n in stad_n:
+                return city
+        return None
+
+    # Each team's last match date: group finale (fixtures.py) overridden by any
+    # completed knockout game (ESPN feed dates are exact; the Elo ledger's ts is
+    # a sync time, not kickoff, so it is NOT used for rest).
+    last_played: dict[str, _dt.date] = {}
+    for fx in fixtures_mod.all_fixtures():
+        try:
+            d = _dt.datetime.strptime(f"{fx['date']} 2026", "%b %d %Y").date()
+        except ValueError:
+            continue
+        for tm in (fx["home"], fx["away"]):
+            if tm not in last_played or d > last_played[tm]:
+                last_played[tm] = d
+    for (a, b), rec in ko.items():
+        if rec["state"] != "post" or not rec.get("date"):
+            continue
+        try:
+            d = _dt.date.fromisoformat(rec["date"])
+        except ValueError:
+            continue
+        if a not in last_played or d > last_played[a]:
+            last_played[a] = d
+
     def resolve(a, b):
         _ph = ("R32-", "R16-", "QF-", "SF-", "F-")
         known = not (a.startswith(_ph) or b.startswith(_ph))
         tie = {"a": a, "b": b, "known": known, "played": False, "live": False,
-               "winner": None, "score": None, "pAdvA": None, "pAdvB": None}
+               "winner": None, "score": None, "pAdvA": None, "pAdvB": None,
+               "venue": None, "restA": None, "restB": None}
         if not known:
             return tie
         rec = ko.get((a, b))
+        city = stadium_city(rec.get("venue")) if rec else None
+        tie["venue"] = (rec.get("venue") or None) if rec else None
         if rec and rec["winner"]:                       # decided (incl. penalties)
             tie["played"] = True
             tie["winner"] = rec["winner"]
@@ -136,7 +178,24 @@ def _road_to_final() -> dict:
             tie["live"] = True
             tie["score"] = f"{rec['gh']}-{rec['ga']}"
         if not tie["played"]:
-            mp = _model_probs(a, b, home_adv_on=False, knockout=True)
+            # Venue-host bonus: a host nation at one of its own stadiums is home.
+            host = ctx_mod.venue_host(city)
+            xh = home_advantage(a) if host == a else 0.0
+            xa = home_advantage(b) if host == b else 0.0
+            # Rest days from each side's actual last match to this tie's date.
+            if rec and rec.get("date"):
+                try:
+                    md = _dt.date.fromisoformat(rec["date"])
+                    ra = (md - last_played[a]).days if a in last_played else None
+                    rb = (md - last_played[b]).days if b in last_played else None
+                    tie["restA"], tie["restB"] = ra, rb
+                    sa, sb = ctx_mod.rest_swing(ra, rb)
+                    xh += sa
+                    xa += sb
+                except ValueError:
+                    pass
+            mp = _model_probs(a, b, venue=city, home_adv_on=False, knockout=True,
+                              extra_h=xh, extra_a=xa)
             padv = advance_probability(mp["home"], mp["draw"], mp["away"])
             tie["pAdvA"] = round(padv, 3)
             tie["pAdvB"] = round(1 - padv, 3)

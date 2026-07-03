@@ -76,10 +76,12 @@ def live_results() -> dict:
             winner = h if home.get("winner") else (a if away.get("winner") else None)
             gh = int(home.get("score") or 0)
             ga = int(away.get("score") or 0)
-            out[(h, a)] = {"gh": gh, "ga": ga, "winner": winner,
-                           "state": state, "id": str(ev.get("id", ""))}
-            out[(a, h)] = {"gh": ga, "ga": gh, "winner": winner,
-                           "state": state, "id": str(ev.get("id", ""))}
+            venue = (comp.get("venue", {}) or {}).get("fullName", "")
+            date = str(ev.get("date", ""))[:10]
+            rec = {"gh": gh, "ga": ga, "winner": winner, "state": state,
+                   "id": str(ev.get("id", "")), "venue": venue, "date": date}
+            out[(h, a)] = rec
+            out[(a, h)] = {**rec, "gh": ga, "ga": gh}
     except Exception:
         pass
     if out:
