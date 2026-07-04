@@ -181,11 +181,11 @@
           <span id="liveRefreshStatus" class="muted" style="font-size:12px"></span>
         </div>
         <div id="liveStatsBox" style="display:none;font-size:12px;margin-top:6px">
-          <table style="margin:0;font-size:12px">
-            <thead><tr><th></th><th class="num" id="liveStatsHomeH">Home</th><th class="num" id="liveStatsAwayH">Away</th></tr></thead>
-            <tbody id="liveStatsBody"></tbody>
-          </table>
-          <button class="ghost" onclick="applyShotSuggestion()" style="margin-top:6px;font-size:12px">📊 Suggest sub % from shot data</button>
+          <div class="row" style="justify-content:space-between;font-weight:600;margin-bottom:6px">
+            <span id="liveStatsHomeH">Home</span><span class="muted" style="font-weight:400">match stats</span><span id="liveStatsAwayH">Away</span>
+          </div>
+          <div id="liveStatsBars"></div>
+          <button class="ghost" onclick="applyShotSuggestion()" style="margin-top:8px;font-size:12px">📊 Suggest sub % from shot data</button>
         </div>
       </div>
 
@@ -1371,25 +1371,52 @@ function renderLiveStats(match) {
   }
   const h = _liveStats.home || {};
   const a = _liveStats.away || {};
-  const rows = [
-    ['Possession', (h.possessionPct || 0).toFixed(0) + '%', (a.possessionPct || 0).toFixed(0) + '%'],
-    ['Shots', h.totalShots || 0, a.totalShots || 0],
-    ['Shots on target', h.shotsOnTarget || 0, a.shotsOnTarget || 0],
-    ['Corners', h.wonCorners || 0, a.wonCorners || 0],
-    ['Yellow cards', h.yellowCards || 0, a.yellowCards || 0],
-    ['Red cards', h.redCards || 0, a.redCards || 0],
+  // [label, espnKey, isPercent, decimals] — order matches broadcast stat panels
+  const defs = [
+    ['Expected goals (xG)', 'expectedGoals', false, 2],
+    ['Shots on target', 'shotsOnTarget', false, 0],
+    ['Shots off target', 'shotsOffTarget', false, 0],
+    ['Blocked shots', 'blockedShots', false, 0],
+    ['Possession (%)', 'possessionPct', true, 0],
+    ['Corner kicks', 'wonCorners', false, 0],
+    ['Offsides', 'offsides', false, 0],
+    ['Fouls', 'foulsCommitted', false, 0],
+    ['Yellow cards', 'yellowCards', false, 0],
+    ['Red cards', 'redCards', false, 0],
+    ['Crosses', 'totalCrosses', false, 0],
+    ['Goalkeeper saves', 'saves', false, 0],
+    ['Passes', 'totalPasses', false, 0],
+    ['Pass accuracy (%)', 'passPct', true, 0],
   ];
+  const barRow = (label, hv, av, isPct) => {
+    let hn = parseFloat(hv) || 0, an = parseFloat(av) || 0;
+    const tot = hn + an;
+    // percentages already sum ~100; others split by share of the pair
+    let hPct = tot > 0 ? (hn / tot) * 100 : 50;
+    if (isPct) hPct = hn;  // possession/pass% shown against 100 directly
+    const aPct = 100 - hPct;
+    const hLead = hn > an, aLead = an > hn;
+    const fmt = v => isPct ? Math.round(v) + '%' : v;
+    return `<div style="margin-bottom:9px">
+      <div class="row" style="justify-content:space-between;font-size:12px;margin-bottom:2px">
+        <b style="min-width:28px;${hLead?'color:var(--acc2)':''}">${fmt(hn)}</b>
+        <span class="muted" style="font-size:11px">${label}</span>
+        <b style="min-width:28px;text-align:right;${aLead?'color:var(--acc)':''}">${fmt(an)}</b>
+      </div>
+      <div style="display:flex;height:5px;border-radius:3px;overflow:hidden;background:#20262e">
+        <div style="width:${hPct}%;background:var(--acc2)"></div>
+        <div style="width:${aPct}%;background:#555"></div>
+      </div>
+    </div>`;
+  };
   $('#liveStatsHomeH').textContent = match ? match.home : 'Home';
   $('#liveStatsAwayH').textContent = match ? match.away : 'Away';
-  $('#liveStatsBody').innerHTML = rows.map(([label, hv, av]) => {
-    const hBold = parseFloat(hv) > parseFloat(av);
-    const aBold = parseFloat(av) > parseFloat(hv);
-    return `<tr>
-      <td class="muted">${label}</td>
-      <td class="num" style="${hBold ? 'color:var(--acc);font-weight:600' : ''}">${hv}</td>
-      <td class="num" style="${aBold ? 'color:var(--acc);font-weight:600' : ''}">${av}</td>
-    </tr>`;
-  }).join('');
+  const bars = defs
+    .filter(([, key]) => (h[key] != null) || (a[key] != null))
+    .map(([label, key, isPct, dec]) => barRow(label,
+        (h[key] || 0).toFixed(dec), (a[key] || 0).toFixed(dec), isPct))
+    .join('');
+  $('#liveStatsBars').innerHTML = bars || '<span class="muted">No stats yet.</span>';
   $('#liveStatsBox').style.display = '';
 }
 

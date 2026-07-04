@@ -381,23 +381,57 @@ def live_matches(date_str: str | None = None) -> list[dict]:
     return out
 
 
+def _collect_stats(node, out: dict) -> None:
+    """Recursively pull every {name, value} stat pair from an ESPN boxscore team
+    (some stats — expectedGoals, etc. — are nested inside stat sub-groups)."""
+    if isinstance(node, dict):
+        name = node.get("name")
+        if name and ("value" in node or "displayValue" in node):
+            try:
+                out[name] = float(node.get("value") if node.get("value") is not None
+                                  else node.get("displayValue") or 0)
+            except (ValueError, TypeError):
+                pass
+        for v in node.values():
+            _collect_stats(v, out)
+    elif isinstance(node, list):
+        for v in node:
+            _collect_stats(v, out)
+
+
 def match_stats(event_id: str) -> dict:
     """Return live boxscore stats for one ESPN event.
 
-    Returns {"home": {...}, "away": {...}} with keys like
-    shotsOnTarget, totalShots, possessionPct, wonCorners, yellowCards, redCards.
+    Returns {"home": {...}, "away": {...}} with every stat ESPN exposes
+    (expectedGoals, shotsOnTarget, totalShots, blockedShots, possessionPct,
+    wonCorners, offsides, foulsCommitted, yellowCards, redCards, saves,
+    totalCrosses, ...) plus a derived shotsOffTarget.
     """
     sess = _session()
     r = sess.get(f"{ESPN_SUMMARY}?event={event_id}", timeout=10)
     r.raise_for_status()
+    ds = r.json()
+
+    # team id -> side, and collect the boxscore statistics
+    id_side: dict[str, str] = {}
     result: dict[str, dict[str, float]] = {}
-    for team_box in r.json().get("boxscore", {}).get("teams", []):
+    for team_box in ds.get("boxscore", {}).get("teams", []):
         side = team_box.get("homeAway", "")
+        id_side[str(team_box.get("team", {}).get("id", ""))] = side
         stats: dict[str, float] = {}
-        for st in team_box.get("statistics", []):
-            try:
-                stats[st["name"]] = float(st.get("value") or st.get("displayValue") or 0)
-            except (ValueError, TypeError):
-                stats[st["name"]] = 0.0
+        _collect_stats(team_box.get("statistics", []), stats)
+        off = (stats.get("totalShots", 0) - stats.get("shotsOnTarget", 0)
+               - stats.get("blockedShots", 0))
+        stats["shotsOffTarget"] = max(0.0, off)
         result[side] = stats
+
+    # Team-total xG lives in the leaders section, not the boxscore.
+    for grp in ds.get("leaders", []):
+        side = id_side.get(str(grp.get("team", {}).get("id", "")))
+        if not side or side not in result:
+            continue
+        xg = {}
+        _collect_stats(grp, xg)
+        if "expectedGoals" in xg:
+            result[side]["expectedGoals"] = xg["expectedGoals"]
     return result
