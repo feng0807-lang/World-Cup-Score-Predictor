@@ -374,6 +374,11 @@ class Handler(BaseHTTPRequestHandler):
             is_neutral = q.get("neutral", [""])[0] in ("1", "true")
             is_ko = is_neutral or q.get("ko", [""])[0] in ("1", "true")
             ha = 0.0 if is_neutral else home_advantage(home)
+            # A host nation only gets its home edge when the match is actually in
+            # its own country. If a venue is picked and it is NOT the home team's
+            # nation, cancel the bonus (Canada at a US stadium = no home Elo).
+            if ha > 0 and venue and ctx_mod.venue_host(venue) != home:
+                ha = 0.0
             p = predict_calibrated(home, away, elo_h, elo_a, home_adv=ha, knockout=is_ko)
             breakdown = {
                 "home": {"base": round(base_h, 1), "lineup": round(lin_h, 1),
