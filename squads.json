@@ -1735,7 +1735,7 @@
         "pos": "DEF",
         "rating": 77,
         "starter": true,
-        "available": false
+        "available": true
       },
       {
         "id": 6,
@@ -1762,7 +1762,7 @@
         "pos": "MID",
         "rating": 76,
         "starter": true,
-        "available": false
+        "available": true
       },
       {
         "id": 9,
@@ -1771,7 +1771,7 @@
         "pos": "MID",
         "rating": 79,
         "starter": true,
-        "available": false
+        "available": true
       },
       {
         "id": 10,
@@ -7753,7 +7753,7 @@
         "pos": "MID",
         "rating": 93,
         "starter": false,
-        "available": true
+        "available": false
       },
       {
         "id": 8,
@@ -10597,7 +10597,7 @@
         "pos": "MID",
         "rating": 91,
         "starter": true,
-        "available": false
+        "available": true
       },
       {
         "id": 4,
@@ -10795,7 +10795,7 @@
         "pos": "DEF",
         "rating": 85,
         "starter": true,
-        "available": false
+        "available": true
       }
     ]
   },

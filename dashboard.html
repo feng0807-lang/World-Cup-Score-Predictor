@@ -196,8 +196,11 @@
         <span class="muted">–</span>
         <input id="liveA" type="number" min="0" max="20" value="0" style="width:52px" oninput="calcLive()">
         <span class="muted" style="margin-left:12px">Minute:</span>
-        <input id="liveMin" type="range" min="0" max="95" value="45" oninput="liveMinLbl();calcLive()" style="width:120px">
+        <input id="liveMin" type="range" min="0" max="120" value="45" oninput="liveMinLbl();calcLive()" style="width:150px">
         <span id="liveMinVal" class="muted">45'</span>
+        <label style="margin-left:10px;font-size:12px">
+          <input type="checkbox" id="liveKO" checked onchange="calcLive()"> Knockout (ET + pens if level)
+        </label>
       </div>
       <div class="row" style="font-size:13px;margin-bottom:12px">
         <span class="muted">Subs impact:</span>
@@ -208,7 +211,9 @@
         <button class="ghost" onclick="calcLive()">↻ Recalc</button>
         <span class="muted" style="font-size:12px">+% = attacking sub, −% = defensive / preserve lead</span>
       </div>
-      <div id="liveWDL" class="grid3" style="margin-bottom:14px"></div>
+      <div id="liveWDL" class="grid3" style="margin-bottom:8px"></div>
+      <div id="liveAdvance" class="hidden" style="margin-bottom:12px;padding:8px 12px;
+           background:#10202a;border:1px solid var(--line);border-radius:8px;font-size:13px"></div>
       <table><thead><tr><th>Final score</th><th class="num">Probability</th><th></th></tr></thead>
         <tbody id="liveScoreBody"></tbody></table>
       <div id="liveLambdaInfo" style="margin-top:10px;font-size:12px;color:var(--mut)"></div>
@@ -1347,7 +1352,7 @@ async function loadLiveScore() {
   // Populate score and minute
   $('#liveH').value = match.homeScore;
   $('#liveA').value = match.awayScore;
-  $('#liveMin').value = Math.min(match.minute, 95);
+  $('#liveMin').value = Math.min(match.minute, 120);
   liveMinLbl();
   $('#liveRefreshStatus').textContent = `Loaded ${match.statusText || match.minute + "'"}`;
 
@@ -1562,9 +1567,12 @@ function settlementBar(s, odds, stake) {
 }
 
 // ── In-play mode ─────────────────────────────────────────────────────────────
+const ET_PACE = 0.65;   // extra-time scoring rate vs regulation (tired legs)
+
 function liveMinLbl() {
   const m = +$('#liveMin').value;
-  $('#liveMinVal').textContent = m + "'";
+  $('#liveMinVal').textContent =
+    m <= 90 ? m + "'" : (m <= 105 ? `ET1 ${m}'` : `ET2 ${m}'`);
 }
 
 function calcLive() {
@@ -1576,11 +1584,27 @@ function calcLive() {
   const min = +$('#liveMin').value || 0;
   const subH = +$('#liveSubH').value || 0;
   const subA = +$('#liveSubA').value || 0;
-  const remain = Math.max(0, (90 - min) / 90);
-  const lh = Math.max(0, lh0 * remain * Math.min(Math.max(1 + subH / 100, 0.3), 2.0));
-  const la = Math.max(0, la0 * remain * Math.min(Math.max(1 + subA / 100, 0.3), 2.0));
+  const ko = $('#liveKO') && $('#liveKO').checked;
+  const fh = Math.min(Math.max(1 + subH / 100, 0.3), 2.0);
+  const fa = Math.min(Math.max(1 + subA / 100, 0.3), 2.0);
+  const inET = min > 90;
+
+  // Remaining-λ for the phase we're in (per-90 base rate × remaining share).
+  let lh, la, remainLbl;
+  if (!inET) {
+    const remain = Math.max(0, (90 - min) / 90);
+    lh = Math.max(0, lh0 * remain * fh);
+    la = Math.max(0, la0 * remain * fa);
+    remainLbl = `${(remain * 100).toFixed(0)}% of regulation left`;
+  } else {
+    const remainET = Math.max(0, (120 - min) / 90);   // per-90 rate × minutes/90
+    lh = Math.max(0, lh0 * remainET * ET_PACE * fh);
+    la = Math.max(0, la0 * remainET * ET_PACE * fa);
+    remainLbl = `${Math.max(0, 120 - min)}' of extra time left (pace ×${ET_PACE})`;
+  }
   liveDistribution = buildGrid(lh, la, curH, curA);
-  // win/draw/loss from remaining
+
+  // Outcome mass at the end of the CURRENT phase
   let pw = 0, pd = 0, pa = 0;
   liveDistribution.forEach(r => {
     if (r.h > r.a) pw += r.p;
@@ -1589,9 +1613,47 @@ function calcLive() {
   });
   const pct = v => (v * 100).toFixed(1) + '%';
   $('#liveWDL').innerHTML = `
-    <div><div class="muted">${currentPrediction.home} win</div><div class="winp starter">${pct(pw)}</div></div>
-    <div><div class="muted">Draw</div><div class="winp">${pct(pd)}</div></div>
-    <div><div class="muted">${currentPrediction.away} win</div><div class="winp">${pct(pa)}</div></div>`;
+    <div><div class="muted">${currentPrediction.home} ${inET ? 'lead after ET' : 'win in 90'}</div><div class="winp starter">${pct(pw)}</div></div>
+    <div><div class="muted">${inET ? 'Level after ET' : 'Draw'}</div><div class="winp">${pct(pd)}</div></div>
+    <div><div class="muted">${currentPrediction.away} ${inET ? 'lead after ET' : 'win in 90'}</div><div class="winp">${pct(pa)}</div></div>`;
+
+  // Knockout chase: level → extra time (fresh 30' at ET pace) → penalties 50/50
+  const advBox = $('#liveAdvance');
+  if (ko) {
+    let win90H = pw, win90A = pa, levelMass = pd;
+    let etH = 0, etA = 0, etLevel = 0;
+    if (!inET) {
+      // full 30' ET mini-grid from any level state
+      const elh = lh0 / 90 * 30 * ET_PACE * fh;
+      const ela = la0 / 90 * 30 * ET_PACE * fa;
+      const et = buildGrid(elh, ela, 0, 0, 6);
+      et.forEach(r => {
+        if (r.h > r.a) etH += r.p;
+        else if (r.h < r.a) etA += r.p;
+        else etLevel += r.p;
+      });
+    } else {
+      // already in ET: the current-phase grid IS the ET resolution
+      win90H = 0; win90A = 0; levelMass = 1;
+      etH = pw; etA = pa; etLevel = pd;
+    }
+    const advH = win90H + levelMass * (etH + etLevel * 0.5);
+    const advA = win90A + levelMass * (etA + etLevel * 0.5);
+    const viaEtH = levelMass * etH, viaEtA = levelMass * etA;
+    const viaPenH = levelMass * etLevel * 0.5, viaPenA = levelMass * etLevel * 0.5;
+    advBox.classList.remove('hidden');
+    advBox.innerHTML =
+      `<b>Advance:</b> ${currentPrediction.home} <b class="starter">${pct(advH)}</b>` +
+      ` &nbsp;·&nbsp; ${currentPrediction.away} <b>${pct(advA)}</b><br>` +
+      `<span class="muted" style="font-size:12px">${currentPrediction.home}: ` +
+      (inET ? '' : `in 90' ${pct(win90H)} · `) + `in ET ${pct(viaEtH)} · on pens ${pct(viaPenH)}` +
+      ` &nbsp;|&nbsp; ${currentPrediction.away}: ` +
+      (inET ? '' : `in 90' ${pct(win90A)} · `) + `in ET ${pct(viaEtA)} · on pens ${pct(viaPenA)}` +
+      ` &nbsp;|&nbsp; pens reached: ${pct(levelMass * etLevel)}</span>`;
+  } else {
+    advBox.classList.add('hidden');
+  }
+
   const top = [...liveDistribution].sort((a, b) => b.p - a.p).slice(0, 8);
   const maxP = top[0]?.p || 1;
   $('#liveScoreBody').innerHTML = top.map(r =>
@@ -1599,7 +1661,7 @@ function calcLive() {
      <td><span class="bar" style="width:${(r.p/maxP*120).toFixed(0)}px"></span></td></tr>`).join('');
   $('#liveLambdaInfo').textContent =
     `Remaining λ: ${currentPrediction.home} ${lh.toFixed(3)}  |  ${currentPrediction.away} ${la.toFixed(3)}  ` +
-    `(${(remain*100).toFixed(0)}% time left, subs ${subH>=0?'+':''}${subH}% / ${subA>=0?'+':''}${subA}%)`;
+    `(${remainLbl}, subs ${subH>=0?'+':''}${subH}% / ${subA>=0?'+':''}${subA}%)`;
   if (betPositions.length) renderBets();
 }
 
