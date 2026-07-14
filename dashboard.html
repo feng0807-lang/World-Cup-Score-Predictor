@@ -367,6 +367,22 @@
       </div>
     </div>
     <div class="card">
+      <h2>🎯 Model vs results — every match</h2>
+      <p class="note">Each played match against the model's read. Group games score the 1X2 pick;
+        knockout ties score the advance pick (ET/pens aware). "Line" is the model's fair Asian
+        handicap for the first-listed team; Cover = did the model's favourite beat that line.
+        Ratings have absorbed these results, so hit rates run slightly flattered.</p>
+      <div class="row" style="margin-bottom:6px">
+        <button class="ghost" onclick="loadModelReview()">⟳ Refresh</button>
+        <span id="mrSummary" class="muted" style="font-size:13px"></span>
+      </div>
+      <table style="font-size:12px"><thead><tr>
+        <th>Stage</th><th>Match</th><th class="num">Result</th><th>Model pick</th>
+        <th class="num">Probs</th><th class="num">Sup</th><th class="num">Line</th><th>Cover</th><th>Hit</th>
+      </tr></thead><tbody id="mrBody"></tbody></table>
+    </div>
+
+    <div class="card">
       <h2>Input journal</h2>
       <p class="note">Everything you enter (manual odds, outright odds, lineup saves)
         is logged to <code>data/history.jsonl</code> with a timestamp.</p>
@@ -593,7 +609,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   t.classList.add('active');
   ['match','tourney','standings','lineup','history','simfix','bets'].forEach(name=>
     $('#tab-'+name).classList.toggle('hidden', name!==t.dataset.tab));
-  if(t.dataset.tab==='history'){ loadHistory(); loadLiveRatings(); }
+  if(t.dataset.tab==='history'){ loadHistory(); loadLiveRatings(); loadModelReview(); }
   if(t.dataset.tab==='standings'){ loadStandings(); loadRoadToFinal(); }
   if(t.dataset.tab==='simfix') loadSimMeta();
   if(t.dataset.tab==='bets') loadLedger();
@@ -667,6 +683,28 @@ function predictFromBracket(a,b){
   $('#home').value=a; $('#away').value=b;
   predict();
   window.scrollTo({top:0,behavior:'smooth'});
+}
+
+async function loadModelReview(){
+  const body=$('#mrBody');
+  if(!body) return;
+  body.innerHTML='<tr><td colspan="9" class="muted">computing…</td></tr>';
+  try{
+    const d=await (await fetch('/api/model_review')).json();
+    if(d.error){ body.innerHTML=`<tr><td colspan="9" class="muted">${d.error}</td></tr>`; return; }
+    $('#mrSummary').innerHTML=`Group 1X2: <b>${d.groupRecord}</b> · Knockout advance: <b>${d.knockoutRecord}</b>`;
+    body.innerHTML=d.rows.map(r=>{
+      const hit=r.hit?'<span style="color:var(--acc);font-weight:600">✓</span>':'<span style="color:#f85149;font-weight:600">✗</span>';
+      const cov=r.cover==='cover'?'<span style="color:var(--acc)">✓</span>'
+              :r.cover==='miss'?'<span style="color:#f85149">✗</span>'
+              :r.cover==='push'?'<span class="muted">=</span>':'';
+      const note=r.note?` <span class="muted">(${r.note})</span>`:'';
+      return `<tr><td class="muted">${r.stage}</td><td>${r.a} v ${r.b}</td>
+        <td class="num">${r.score}${note}</td><td>${r.pick}</td>
+        <td class="num muted">${r.probs}</td><td class="num">${r.sup>0?'+':''}${r.sup}</td>
+        <td class="num">${r.fairLine>0?'+':''}${r.fairLine}</td><td>${cov}</td><td>${hit}</td></tr>`;
+    }).join('');
+  }catch(e){ body.innerHTML='<tr><td colspan="9" class="muted">unavailable</td></tr>'; }
 }
 
 async function loadRoadToFinal(){

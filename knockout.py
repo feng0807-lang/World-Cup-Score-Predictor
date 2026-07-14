@@ -72,13 +72,15 @@ def live_results() -> dict:
             a = form._canonical_team(away.get("team", {}).get("displayName", ""))
             if not h or not a or "Winner" in h or "Winner" in a:
                 continue
-            state = ev.get("status", {}).get("type", {}).get("state", "pre")
+            stype = ev.get("status", {}).get("type", {})
+            state = stype.get("state", "pre")
             winner = h if home.get("winner") else (a if away.get("winner") else None)
             gh = int(home.get("score") or 0)
             ga = int(away.get("score") or 0)
             venue = (comp.get("venue", {}) or {}).get("fullName", "")
             date = str(ev.get("date", ""))[:10]
             rec = {"gh": gh, "ga": ga, "winner": winner, "state": state,
+                   "status": stype.get("name", ""),
                    "id": str(ev.get("id", "")), "venue": venue, "date": date}
             out[(h, a)] = rec
             out[(a, h)] = {**rec, "gh": ga, "ga": gh}

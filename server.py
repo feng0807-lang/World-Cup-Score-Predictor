@@ -102,6 +102,101 @@ def _model_probs(home: str, away: str, venue: str | None = None,
     return {"home": p.p_home_win, "draw": p.p_draw, "away": p.p_away_win}
 
 
+def _predict_for(home: str, away: str, venue: str | None = None,
+                 knockout: bool = False, home_adv_on: bool = True):
+    """Full MatchPrediction with the same adjustments _model_probs applies
+    (context, venue-gated host bonus, knockout calibration)."""
+    ctx = ctx_mod.context_delta(home, away, venue=venue, match_date=None)
+    elo_h = _calibrated_elo(home) + ctx["home"]
+    elo_a = _calibrated_elo(away) + ctx["away"]
+    ha = home_advantage(home) if home_adv_on else 0.0
+    if ha > 0 and venue and ctx_mod.venue_host(venue) != home:
+        ha = 0.0
+    return predict_calibrated(home, away, elo_h, elo_a, home_adv=ha, knockout=knockout)
+
+
+def _model_review() -> dict:
+    """Every played match vs the model: pick, probabilities, fair AH line and
+    hit/miss. Group games score the 1X2 pick; knockout ties the advance pick."""
+    import knockout as ko_mod
+    rows = []
+
+    res = {}
+    for r in live_mod.results():
+        res[(r["home"], r["away"])] = r
+
+    g_hit = g_n = 0
+    for fx in fixtures_mod.all_fixtures():
+        h, a = fx["home"], fx["away"]
+        r = res.get((h, a))
+        flip = False
+        if r is None and (a, h) in res:
+            r, flip = res[(a, h)], True
+        if r is None:
+            continue
+        gh, ga = (r["ga"], r["gh"]) if flip else (r["gh"], r["ga"])
+        p = _predict_for(h, a, venue=fx.get("venue"))
+        probs = {"H": p.p_home_win, "D": p.p_draw, "A": p.p_away_win}
+        pick = max(probs, key=probs.get)
+        outcome = "H" if gh > ga else ("A" if ga > gh else "D")
+        hit = pick == outcome
+        g_n += 1
+        g_hit += hit
+        sup = p.lambda_home - p.lambda_away
+        fair = round(-sup * 2) / 2
+        margin = gh - ga
+        fav_margin = margin if sup >= 0 else -margin
+        fav_line = fair if sup >= 0 else -fair
+        adj = fav_margin + fav_line
+        cover = "push" if adj == 0 else ("cover" if adj > 0 else "miss")
+        rows.append({
+            "stage": f"Group {fx['group']}", "a": h, "b": a,
+            "score": f"{gh}-{ga}", "note": "",
+            "pick": {"H": h, "D": "Draw", "A": a}[pick],
+            "probs": f"{probs['H']*100:.0f}/{probs['D']*100:.0f}/{probs['A']*100:.0f}",
+            "hit": hit, "sup": round(sup, 2), "fairLine": fair,
+            "margin": margin, "cover": cover,
+        })
+
+    ko = ko_mod.live_results()
+    k_hit = k_n = 0
+    seen = set()
+    stage_of = {}
+    rtf = _road_to_final()
+    for rd in rtf["rounds"]:
+        for t in rd["ties"]:
+            if t["played"]:
+                stage_of[(t["a"], t["b"])] = rd["name"]
+    for (a, b), rec in ko.items():
+        if rec["id"] in seen or not rec["winner"] or rec["state"] != "post":
+            continue
+        if (a, b) not in stage_of:      # reversed duplicate
+            continue
+        seen.add(rec["id"])
+        p = _predict_for(a, b, knockout=True, home_adv_on=False)
+        padv = advance_probability(p.p_home_win, p.p_draw, p.p_away_win)
+        pick = a if padv >= 0.5 else b
+        hit = pick == rec["winner"]
+        k_n += 1
+        k_hit += hit
+        status = rec.get("status", "")
+        note = "pens" if "PEN" in status else ("aet" if "AET" in status else "")
+        sup = p.lambda_home - p.lambda_away
+        rows.append({
+            "stage": stage_of[(a, b)], "a": a, "b": b,
+            "score": f"{rec['gh']}-{rec['ga']}", "note": note,
+            "pick": pick,
+            "probs": f"{padv*100:.0f}% adv" if pick == a else f"{(1-padv)*100:.0f}% adv",
+            "hit": hit, "sup": round(sup, 2), "fairLine": round(-sup * 2) / 2,
+            "margin": rec["gh"] - rec["ga"], "cover": "",
+        })
+
+    return {"rows": rows,
+            "groupRecord": f"{g_hit}/{g_n}",
+            "knockoutRecord": f"{k_hit}/{k_n}",
+            "note": "Ratings have absorbed these results, so hit rates are mildly flattered vs true pre-match."}
+
+
 def _road_to_final() -> dict:
     """Live knockout bracket on the OFFICIAL 2026 draw (knockout.py).
 
@@ -514,6 +609,11 @@ class Handler(BaseHTTPRequestHandler):
                 "hasCacheData": bool(cache),
                 "players": detail,
             })
+
+        if path == "/api/model_review":
+            if not secure.available():
+                return self._send({"error": "model_unavailable"}, 503)
+            return self._send(_model_review())
 
         if path == "/api/roadtofinal":
             if not secure.available():
