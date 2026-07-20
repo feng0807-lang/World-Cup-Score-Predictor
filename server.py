@@ -34,6 +34,7 @@ import coach as coach_mod
 import sim_fixtures as sim_mod
 import form as form_mod
 import keyplayers as kp_mod
+import discipline as disc_mod
 import context as ctx_mod
 import valuebets as vb_mod
 from model import predict_calibrated, home_advantage, advance_probability
@@ -56,7 +57,8 @@ def _strength_delta(team: str, include_sim: bool = True) -> float:
     in the fixture forecaster)."""
     d = (_lineup_delta(team) + live_mod.get_delta(team) + coach_mod.get_delta(team)
          + form_mod.team_form_delta(SQUADS.get(team, {}), team)
-         + kp_mod.team_keyplayer_delta(team, SQUADS.get(team, {})))
+         + kp_mod.team_keyplayer_delta(team, SQUADS.get(team, {}))
+         + disc_mod.get_delta(team))
     if include_sim:
         d += sim_mod.get_delta(team)
     return d
@@ -449,6 +451,7 @@ class Handler(BaseHTTPRequestHandler):
             sim_h, sim_a = sim_mod.get_delta(home), sim_mod.get_delta(away)
             kp_h = kp_mod.team_keyplayer_delta(home, SQUADS.get(home, {}))
             kp_a = kp_mod.team_keyplayer_delta(away, SQUADS.get(away, {}))
+            ref_h, ref_a = disc_mod.get_delta(home), disc_mod.get_delta(away)
             wx_h = wx_a = 0.0
             climate_info = None
             venue = q.get("venue", [""])[0]
@@ -481,12 +484,14 @@ class Handler(BaseHTTPRequestHandler):
                          "coach": round(coach_h, 1), "coachName": coach_mod.get(home)["name"],
                          "playerForm": round(frm_h, 1), "sim": round(sim_h, 1),
                          "keyPlayer": round(kp_h, 1), "homeAdv": round(ha, 1),
+                         "ref": round(ref_h, 1),
                          "context": round(ctx["home"], 1), "effective": round(elo_h + ha, 1)},
                 "away": {"base": round(base_a, 1), "lineup": round(lin_a, 1),
                          "liveForm": round(live_a, 1), "weather": round(wx_a, 1),
                          "coach": round(coach_a, 1), "coachName": coach_mod.get(away)["name"],
                          "playerForm": round(frm_a, 1), "sim": round(sim_a, 1),
                          "keyPlayer": round(kp_a, 1), "homeAdv": 0.0,
+                         "ref": round(ref_a, 1),
                          "context": round(ctx["away"], 1), "effective": round(elo_a, 1)},
             }
             pH, pD, pA = p.p_home_win, p.p_draw, p.p_away_win
@@ -609,6 +614,10 @@ class Handler(BaseHTTPRequestHandler):
                 "hasCacheData": bool(cache),
                 "players": detail,
             })
+
+        if path == "/api/discipline":
+            return self._send({"teams": disc_mod.table(),
+                               "ts": disc_mod._load().get("ts")})
 
         if path == "/api/model_review":
             if not secure.available():
@@ -805,6 +814,13 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/value_remove":
             vb_mod.remove_bet(body.get("id", ""))
             return self._send(vb_mod.summary())
+
+        if url.path == "/api/refresh_discipline":
+            try:
+                d = disc_mod.analyze(force=True)
+                return self._send({"ok": True, "teamCount": d.get("teamCount", 0)})
+            except Exception as e:
+                return self._send({"ok": False, "error": str(e)}, 500)
 
         if url.path == "/api/refresh_keyplayers":
             try:

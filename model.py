@@ -30,6 +30,14 @@ GOALS_PER_ELO = 0.0036          # goals of supremacy per Elo point of difference
 SUPREMACY_ELO_WEIGHT = 0.85     # 85% calibrated-Elo supremacy, 15% encrypted
 _LAMBDA_CAP = 6.5
 
+# Prime tuning (post-tournament backtest over 100 matches): actual margins ran
+# +0.3 goals beyond expected supremacy, favourites covered the model's own fair
+# line 68%, and a supremacy-multiplier grid improved monotonically to ~x1.2
+# (RPS 0.149 -> 0.144, acc 68 -> 71%). Applied DAMPED at x1.12 — half the
+# indicated move — because the grid is in-sample (live deltas absorbed the
+# results, which flatters wider gaps).
+SUPREMACY_PRIME = 1.12
+
 # Total-goals calibration. The encrypted engine's total (lambda_home + lambda_away)
 # ran ~29% low vs WC2026 group-stage scoring (~3.0 goals/match observed over the
 # first 44 matches; model expected ~2.36). The 48-team format packs in mismatches,
@@ -127,7 +135,7 @@ def _reanchor(lh_e: float, la_e: float, elo_home: float, elo_away: float,
     if knockout:
         total *= KNOCKOUT_GOALS_FACTOR
     sup = (SUPREMACY_ELO_WEIGHT * GOALS_PER_ELO * (elo_home - elo_away)
-           + (1.0 - SUPREMACY_ELO_WEIGHT) * (lh_e - la_e))
+           + (1.0 - SUPREMACY_ELO_WEIGHT) * (lh_e - la_e)) * SUPREMACY_PRIME
     lh = max(0.05, min((total + sup) / 2.0, _LAMBDA_CAP))
     la = max(0.05, min((total - sup) / 2.0, _LAMBDA_CAP))
     return lh, la

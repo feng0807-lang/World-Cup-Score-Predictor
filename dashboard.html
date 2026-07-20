@@ -324,6 +324,23 @@
       </div>
       <div id="rtfBracket" style="overflow-x:auto"></div>
     </div>
+    <div class="card">
+      <h2>🟨 Fouls × cards — referee favour</h2>
+      <p class="note">Cards conceded per 10 fouls, for the team and for its opponents. A team whose
+        opponents get carded more readily than they do (per foul) is "protected" — they keep 11 men
+        and rack up fewer suspensions. The favour index feeds a small Elo adjustment (±8 cap),
+        shown as "ref" in the prediction rating mix.</p>
+      <div class="row" style="margin-bottom:6px">
+        <button class="ghost" onclick="refreshDiscipline()" id="discBtn">⟳ Refresh from ESPN</button>
+        <span id="discStatus" class="muted" style="font-size:12px"></span>
+      </div>
+      <table style="font-size:12px"><thead><tr>
+        <th>Team</th><th class="num">M</th><th class="num">Fouls</th><th class="num">🟨</th><th class="num">🟥</th>
+        <th class="num" title="own cards per 10 fouls">own c/10f</th>
+        <th class="num" title="opponent cards per 10 of their fouls">opp c/10f</th>
+        <th class="num">Favour</th><th class="num">Elo adj</th>
+      </tr></thead><tbody id="discBody"></tbody></table>
+    </div>
   </section>
 
   <!-- HISTORY -->
@@ -610,7 +627,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   ['match','tourney','standings','lineup','history','simfix','bets'].forEach(name=>
     $('#tab-'+name).classList.toggle('hidden', name!==t.dataset.tab));
   if(t.dataset.tab==='history'){ loadHistory(); loadLiveRatings(); loadModelReview(); }
-  if(t.dataset.tab==='standings'){ loadStandings(); loadRoadToFinal(); }
+  if(t.dataset.tab==='standings'){ loadStandings(); loadRoadToFinal(); loadDiscipline(); }
   if(t.dataset.tab==='simfix') loadSimMeta();
   if(t.dataset.tab==='bets') loadLedger();
 });
@@ -683,6 +700,35 @@ function predictFromBracket(a,b){
   $('#home').value=a; $('#away').value=b;
   predict();
   window.scrollTo({top:0,behavior:'smooth'});
+}
+
+async function loadDiscipline(){
+  const body=$('#discBody');
+  if(!body) return;
+  try{
+    const d=await (await fetch('/api/discipline')).json();
+    if(!(d.teams||[]).length){ body.innerHTML='<tr><td colspan="9" class="muted">No data — click Refresh from ESPN.</td></tr>'; return; }
+    $('#discStatus').textContent=d.ts?('updated '+d.ts):'';
+    body.innerHTML=d.teams.map(r=>{
+      const col=r.favour>0.3?'var(--acc)':(r.favour<-0.3?'#f85149':'var(--mut)');
+      return `<tr><td>${r.team}</td><td class="num">${r.matches}</td><td class="num">${r.fouls}</td>
+        <td class="num">${r.yellow}</td><td class="num">${r.red}</td>
+        <td class="num">${r.ownCardsPer10Fouls}</td><td class="num">${r.oppCardsPer10Fouls}</td>
+        <td class="num" style="color:${col};font-weight:600">${r.favour>0?'+':''}${r.favour}</td>
+        <td class="num" style="color:${col}">${r.refDelta>0?'+':''}${r.refDelta}</td></tr>`;
+    }).join('');
+  }catch(e){ body.innerHTML='<tr><td colspan="9" class="muted">unavailable</td></tr>'; }
+}
+
+async function refreshDiscipline(){
+  const b=$('#discBtn'); b.disabled=true;
+  $('#discStatus').textContent='rebuilding from ESPN… (~1 min)';
+  try{
+    const d=await (await fetch('/api/refresh_discipline',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+    $('#discStatus').textContent=d.ok?`✓ ${d.teamCount} teams`:('Error: '+(d.error||''));
+    loadDiscipline();
+  }catch(e){ $('#discStatus').textContent='Error: '+e.message; }
+  finally{ b.disabled=false; }
 }
 
 async function loadModelReview(){
@@ -854,6 +900,7 @@ async function predict(){
       if(o.keyPlayer) parts.push(`<span style="color:#f85149">key player ${o.keyPlayer>0?'+':''}${o.keyPlayer}</span>`);
       if(o.homeAdv) parts.push(`<span style="color:var(--acc2)">home +${o.homeAdv}</span>`);
       if(o.context) parts.push(`rest/altitude ${o.context>0?'+':''}${o.context}`);
+      if(o.ref) parts.push(`<span style="color:var(--warn)">ref ${o.ref>0?'+':''}${o.ref}</span>`);
       const adj=parts.length?` (${parts.join(', ')})`:'';
       return `${name}: base ${o.base} → <b>${o.effective}</b>${adj}`;
     };
