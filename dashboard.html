@@ -96,6 +96,7 @@
 
 <div class="tabs">
   <div class="tab active" data-tab="match">Match Predictor</div>
+  <div class="tab" data-tab="leagues">⚽ Club Leagues</div>
   <div class="tab" data-tab="tourney">Tournament Table</div>
   <div class="tab" data-tab="standings">Standings &amp; Bracket</div>
   <div class="tab" data-tab="lineup">Starting XI Editor</div>
@@ -254,6 +255,52 @@
         <div id="blendRow" class="hidden" style="margin-top:10px"></div>
       </div>
       <div id="oddsMsg" class="note hidden"></div>
+    </div>
+  </section>
+
+  <!-- CLUB LEAGUES -->
+  <section id="tab-leagues" class="hidden">
+    <div class="card">
+      <h2>⚽ Club leagues</h2>
+      <p class="note">Club teams aren't in the trained international model, so each league gets its
+        own Elo built by replaying every result of the last two seasons, plus its own measured home
+        advantage and scoring rate. Build a league once, then predict any fixture in it.</p>
+      <div class="row" style="font-size:13px;flex-wrap:wrap">
+        <select id="lgSel" onchange="loadLeague()" style="min-width:210px"></select>
+        <button class="ghost" onclick="buildLeague()" id="lgBuildBtn">⟳ Build / refresh from ESPN</button>
+        <span id="lgStatus" class="muted" style="font-size:12px"></span>
+      </div>
+      <div id="lgMeta" class="muted" style="font-size:12px;margin-top:8px"></div>
+    </div>
+
+    <div class="card" id="lgPredictCard">
+      <h2>Predict a fixture</h2>
+      <div class="row" style="font-size:13px">
+        <select id="lgHome" style="min-width:170px"></select>
+        <span class="muted">vs</span>
+        <select id="lgAway" style="min-width:170px"></select>
+        <button onclick="leaguePredict()">Predict</button>
+        <label style="font-size:12px"><input type="checkbox" id="lgNeutral"> neutral venue</label>
+      </div>
+      <div id="lgResult" class="hidden" style="margin-top:14px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Upcoming fixtures — model lines</h2>
+      <p class="note">Next fixtures with the model's 1X2 and fair Asian handicap for the home side.</p>
+      <table style="font-size:12px"><thead><tr><th>Date</th><th>Fixture</th>
+        <th class="num">Home</th><th class="num">Draw</th><th class="num">Away</th>
+        <th class="num">xScore</th><th class="num">Line</th></tr></thead>
+        <tbody id="lgFixBody"></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>Table &amp; Elo ratings</h2>
+      <table style="font-size:12px"><thead><tr><th>#</th><th>Team</th>
+        <th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th>
+        <th class="num">GF</th><th class="num">GA</th><th class="num">GD</th>
+        <th class="num">Pts</th><th class="num">Elo</th></tr></thead>
+        <tbody id="lgTableBody"></tbody></table>
     </div>
   </section>
 
@@ -624,8 +671,9 @@ async function init(){
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   t.classList.add('active');
-  ['match','tourney','standings','lineup','history','simfix','bets'].forEach(name=>
+  ['match','leagues','tourney','standings','lineup','history','simfix','bets'].forEach(name=>
     $('#tab-'+name).classList.toggle('hidden', name!==t.dataset.tab));
+  if(t.dataset.tab==='leagues') initLeagues();
   if(t.dataset.tab==='history'){ loadHistory(); loadLiveRatings(); loadModelReview(); }
   if(t.dataset.tab==='standings'){ loadStandings(); loadRoadToFinal(); loadDiscipline(); }
   if(t.dataset.tab==='simfix') loadSimMeta();
@@ -700,6 +748,117 @@ function predictFromBracket(a,b){
   $('#home').value=a; $('#away').value=b;
   predict();
   window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ── Club leagues ─────────────────────────────────────────────────────────────
+let _lgList=null, _lgData=null;
+
+async function initLeagues(){
+  if(_lgList) return;
+  try{
+    const d=await (await fetch('/api/leagues')).json();
+    _lgList=d.leagues||[];
+    $('#lgSel').innerHTML=_lgList.map(l=>
+      `<option value="${l.slug}">${l.name} — ${l.country}${l.built?` (${l.teams} teams)`:' · not built'}</option>`).join('');
+    const first=_lgList.find(l=>l.built)||_lgList[0];
+    if(first){ $('#lgSel').value=first.slug; loadLeague(); }
+  }catch(e){ $('#lgStatus').textContent='league list unavailable'; }
+}
+
+async function loadLeague(){
+  const slug=$('#lgSel').value;
+  try{
+    const r=await fetch('/api/league?slug='+encodeURIComponent(slug));
+    if(!r.ok){
+      _lgData=null;
+      $('#lgMeta').innerHTML='<span class="note">Not built yet — click "Build / refresh from ESPN".</span>';
+      $('#lgTableBody').innerHTML=''; $('#lgFixBody').innerHTML='';
+      $('#lgHome').innerHTML=''; $('#lgAway').innerHTML='';
+      return;
+    }
+    const d=await r.json(); _lgData=d;
+    $('#lgMeta').innerHTML=
+      `<b>${d.name}</b> · ${d.matchesPlayed} matches replayed · `+
+      `home advantage <b class="starter">${d.homeAdv} Elo</b> · `+
+      `avg goals <b>${d.avgGoals}</b> · home wins ${d.homeWinPct}% · draws ${d.drawPct}% `+
+      `<span style="opacity:.6">· built ${(d.ts||'').slice(0,10)}</span>`;
+    const teams=Object.keys(d.elo||{}).sort();
+    const opts=teams.map(t=>`<option>${t}</option>`).join('');
+    $('#lgHome').innerHTML=opts; $('#lgAway').innerHTML=opts;
+    if(teams.length>1) $('#lgAway').selectedIndex=1;
+    $('#lgTableBody').innerHTML=(d.table||[]).map((r,i)=>
+      `<tr><td class="muted">${i+1}</td><td>${r.team}</td><td class="num">${r.P}</td>
+       <td class="num">${r.W}</td><td class="num">${r.D}</td><td class="num">${r.L}</td>
+       <td class="num">${r.GF}</td><td class="num">${r.GA}</td>
+       <td class="num">${r.GD>0?'+':''}${r.GD}</td><td class="num"><b>${r.Pts}</b></td>
+       <td class="num starter">${r.elo}</td></tr>`).join('')
+       ||'<tr><td colspan="11" class="muted">No current-season matches yet.</td></tr>';
+    loadLeagueFixtures();
+  }catch(e){ $('#lgStatus').textContent='Error: '+e.message; }
+}
+
+async function loadLeagueFixtures(){
+  const slug=$('#lgSel').value;
+  $('#lgFixBody').innerHTML='<tr><td colspan="7" class="muted">computing…</td></tr>';
+  try{
+    const d=await (await fetch('/api/league_fixtures?slug='+encodeURIComponent(slug))).json();
+    const pct=v=>(v*100).toFixed(0)+'%';
+    $('#lgFixBody').innerHTML=(d.fixtures||[]).map(f=>{
+      const mx=Math.max(f.pHome,f.pDraw,f.pAway);
+      const hl=v=>v===mx?'style="color:var(--acc);font-weight:600"':'';
+      return `<tr><td class="muted">${f.date}</td><td>${f.home} v ${f.away}</td>
+        <td class="num" ${hl(f.pHome)}>${pct(f.pHome)}</td>
+        <td class="num" ${hl(f.pDraw)}>${pct(f.pDraw)}</td>
+        <td class="num" ${hl(f.pAway)}>${pct(f.pAway)}</td>
+        <td class="num muted">${f.expected[0]}–${f.expected[1]}</td>
+        <td class="num">${f.fairLine>0?'+':''}${f.fairLine}</td></tr>`;
+    }).join('')||'<tr><td colspan="7" class="muted">No upcoming fixtures listed.</td></tr>';
+  }catch(e){ $('#lgFixBody').innerHTML='<tr><td colspan="7" class="muted">unavailable</td></tr>'; }
+}
+
+async function leaguePredict(){
+  const slug=$('#lgSel').value, h=$('#lgHome').value, a=$('#lgAway').value;
+  if(!h||!a||h===a){ alert('Pick two different teams.'); return; }
+  const nt=$('#lgNeutral').checked?'&neutral=1':'';
+  const d=await (await fetch(`/api/league_predict?slug=${encodeURIComponent(slug)}&home=${encodeURIComponent(h)}&away=${encodeURIComponent(a)}${nt}`)).json();
+  const box=$('#lgResult'); box.className='';
+  if(d.error){ box.innerHTML='<span class="note">'+d.error+'</span>'; return; }
+  const pct=v=>(v*100).toFixed(1)+'%';
+  const sup=(d.expected[0]-d.expected[1]);
+  const lines=(d.handicap&&d.handicap.lines||[]).filter(l=>Math.abs(l.line)<=2).slice(0,99);
+  box.innerHTML=
+    `<div class="grid3" style="margin-bottom:12px">
+       <div><div class="muted">${d.home}</div><div class="winp starter">${pct(d.pHome)}</div></div>
+       <div><div class="muted">Draw</div><div class="winp">${pct(d.pDraw)}</div></div>
+       <div><div class="muted">${d.away}</div><div class="winp">${pct(d.pAway)}</div></div>
+     </div>
+     <div style="text-align:center;margin-bottom:10px">
+       <div class="muted">Expected / most likely score</div>
+       <div class="big">${d.expected[0]}–${d.expected[1]} &nbsp;·&nbsp;
+         <span class="muted">${d.mostLikely[0]}–${d.mostLikely[1]}</span></div>
+     </div>
+     <div style="font-size:12px;padding:8px 12px;background:#161b22;border:1px solid var(--line);border-radius:8px;margin-bottom:10px">
+       Elo ${d.home} <b>${d.eloHome}</b> vs ${d.away} <b>${d.eloAway}</b>
+       ${d.homeAdv?` · home advantage <span style="color:var(--acc2)">+${d.homeAdv}</span>`:' · neutral'}
+       · league avg goals ${d.leagueAvgGoals}
+       · supremacy ${sup>0?'+':''}${sup.toFixed(2)} → fair line <b>${(Math.round(-sup*2)/2)>0?'+':''}${Math.round(-sup*2)/2}</b>
+     </div>
+     <table style="font-size:12px"><thead><tr><th>Scoreline</th><th class="num">Probability</th></tr></thead>
+       <tbody>${d.scorelines.map(s=>`<tr><td>${s.score}</td><td class="num">${(s.p*100).toFixed(1)}%</td></tr>`).join('')}</tbody></table>`;
+}
+
+async function buildLeague(){
+  const slug=$('#lgSel').value, b=$('#lgBuildBtn'); b.disabled=true;
+  $('#lgStatus').textContent='fetching 2 seasons from ESPN… (~20s)';
+  try{
+    const d=await (await fetch('/api/league_refresh',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({slug})})).json();
+    $('#lgStatus').textContent=d.ok
+      ? `✓ ${d.name}: ${d.matchesPlayed} matches, ${d.teams} teams`
+      : 'Error: '+(d.error||'build failed');
+    _lgList=null; await initLeagues(); $('#lgSel').value=slug; loadLeague();
+  }catch(e){ $('#lgStatus').textContent='Error: '+e.message; }
+  finally{ b.disabled=false; }
 }
 
 async function loadDiscipline(){

@@ -129,11 +129,20 @@ def predict_match(home: str, away: str, delta_home: float = 0.0,
 # --- Calibrated-Elo prediction path ------------------------------------------
 
 def _reanchor(lh_e: float, la_e: float, elo_home: float, elo_away: float,
-              knockout: bool = False) -> tuple[float, float]:
-    """Recombine the (scaled) encrypted total-goals with calibrated-Elo supremacy."""
-    total = (lh_e + la_e) * TOTAL_GOALS_SCALE
-    if knockout:
-        total *= KNOCKOUT_GOALS_FACTOR
+              knockout: bool = False,
+              total_override: float | None = None) -> tuple[float, float]:
+    """Recombine the (scaled) encrypted total-goals with calibrated-Elo supremacy.
+
+    `total_override` replaces the encrypted total outright — used for club
+    leagues, where the engine has no ratings for the teams and each league's
+    own measured scoring rate is the better prior.
+    """
+    if total_override is not None:
+        total = total_override
+    else:
+        total = (lh_e + la_e) * TOTAL_GOALS_SCALE
+        if knockout:
+            total *= KNOCKOUT_GOALS_FACTOR
     sup = (SUPREMACY_ELO_WEIGHT * GOALS_PER_ELO * (elo_home - elo_away)
            + (1.0 - SUPREMACY_ELO_WEIGHT) * (lh_e - la_e)) * SUPREMACY_PRIME
     lh = max(0.05, min((total + sup) / 2.0, _LAMBDA_CAP))
@@ -143,10 +152,12 @@ def _reanchor(lh_e: float, la_e: float, elo_home: float, elo_away: float,
 
 def expected_goals_calibrated(home: str, away: str, elo_home: float, elo_away: float,
                               neutral: bool = True, home_adv: float = 0.0,
-                              knockout: bool = False) -> tuple[float, float]:
+                              knockout: bool = False,
+                              total_override: float | None = None) -> tuple[float, float]:
     """Expected goals with supremacy anchored to calibrated Elo (+ home advantage)."""
     lh_e, la_e = secure.expected_goals(home, away, 0.0, 0.0, neutral)
-    return _reanchor(lh_e, la_e, elo_home + home_adv, elo_away, knockout)
+    return _reanchor(lh_e, la_e, elo_home + home_adv, elo_away, knockout,
+                     total_override)
 
 
 def _poisson_pmf(k: int, lam: float) -> float:
@@ -167,11 +178,12 @@ def _tau(h: int, a: int, lh: float, la: float, rho: float) -> float:
 
 def predict_calibrated(home: str, away: str, elo_home: float, elo_away: float,
                        neutral: bool = True, home_adv: float = 0.0,
-                       knockout: bool = False) -> MatchPrediction:
+                       knockout: bool = False,
+                       total_override: float | None = None) -> MatchPrediction:
     """Full prediction with supremacy anchored to calibrated Elo, Dixon-Coles
     low-score correction (rho) applied just like the encrypted engine."""
     lh, la = expected_goals_calibrated(home, away, elo_home, elo_away, neutral,
-                                       home_adv, knockout)
+                                       home_adv, knockout, total_override)
     rho = secure.rho()
     mg = secure.max_goals()
     ph = [_poisson_pmf(i, lh) for i in range(mg + 1)]

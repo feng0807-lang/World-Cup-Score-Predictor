@@ -35,6 +35,7 @@ import sim_fixtures as sim_mod
 import form as form_mod
 import keyplayers as kp_mod
 import discipline as disc_mod
+import leagues as lg_mod
 import context as ctx_mod
 import valuebets as vb_mod
 from model import predict_calibrated, home_advantage, advance_probability
@@ -102,6 +103,32 @@ def _model_probs(home: str, away: str, venue: str | None = None,
     ha = home_advantage(home) if home_adv_on else 0.0
     p = predict_calibrated(home, away, elo_h, elo_a, home_adv=ha, knockout=knockout)
     return {"home": p.p_home_win, "draw": p.p_draw, "away": p.p_away_win}
+
+
+def _league_predict(slug: str, home: str, away: str, neutral: bool = False) -> dict:
+    """Predict a club fixture. The encrypted engine has no ratings for club
+    teams, so supremacy comes entirely from the league's Elo and the total is
+    the league's own measured scoring rate."""
+    d = lg_mod.load(slug)
+    if not d:
+        return {"error": "league_not_built"}
+    elo = d.get("elo", {})
+    eh, ea = elo.get(home, lg_mod.SEED_ELO), elo.get(away, lg_mod.SEED_ELO)
+    ha = 0.0 if neutral else d.get("homeAdv", lg_mod.DEFAULT_HOME_ADV)
+    p = predict_calibrated(home, away, eh, ea, home_adv=ha,
+                           total_override=d.get("avgGoals", lg_mod.DEFAULT_AVG_GOALS))
+    return {
+        "league": d["name"], "slug": slug, "home": home, "away": away,
+        "eloHome": round(eh, 1), "eloAway": round(ea, 1),
+        "homeAdv": round(ha, 1), "leagueAvgGoals": d.get("avgGoals"),
+        "expected": list(p.expected_score),
+        "mostLikely": list(p.most_likely_score),
+        "pHome": p.p_home_win, "pDraw": p.p_draw, "pAway": p.p_away_win,
+        "scorelines": [{"score": f"{i}-{j}", "p": pr}
+                       for (i, j), pr in p.top_scorelines(8)],
+        "handicap": handicap_mod.cover_table(p.scoreline_probs),
+        "known": {"home": home in elo, "away": away in elo},
+    }
 
 
 def _predict_for(home: str, away: str, venue: str | None = None,
@@ -615,6 +642,44 @@ class Handler(BaseHTTPRequestHandler):
                 "players": detail,
             })
 
+        if path == "/api/leagues":
+            return self._send({"leagues": lg_mod.available()})
+
+        if path == "/api/league":
+            slug = q.get("slug", [""])[0]
+            d = lg_mod.load(slug)
+            if not d:
+                return self._send({"error": "not_built", "slug": slug}, 404)
+            return self._send({k: v for k, v in d.items() if k != "upcoming"}
+                              | {"upcoming": d.get("upcoming", [])[:20]})
+
+        if path == "/api/league_predict":
+            slug = q.get("slug", [""])[0]
+            home, away = q.get("home", [""])[0], q.get("away", [""])[0]
+            if not slug or not home or not away:
+                return self._send({"error": "slug, home and away required"}, 400)
+            neutral = q.get("neutral", [""])[0] in ("1", "true")
+            res = _league_predict(slug, home, away, neutral)
+            return self._send(res, 404 if res.get("error") else 200)
+
+        if path == "/api/league_fixtures":
+            """Upcoming fixtures with a model line on each."""
+            slug = q.get("slug", [""])[0]
+            d = lg_mod.load(slug)
+            if not d:
+                return self._send({"error": "not_built"}, 404)
+            rows = []
+            for fx in d.get("upcoming", [])[:20]:
+                p = _league_predict(slug, fx["home"], fx["away"])
+                if p.get("error"):
+                    continue
+                sup = p["expected"][0] - p["expected"][1]
+                rows.append({"date": fx["date"], "home": fx["home"], "away": fx["away"],
+                             "pHome": p["pHome"], "pDraw": p["pDraw"], "pAway": p["pAway"],
+                             "expected": p["expected"],
+                             "fairLine": round(-sup * 2) / 2})
+            return self._send({"slug": slug, "name": d["name"], "fixtures": rows})
+
         if path == "/api/discipline":
             return self._send({"teams": disc_mod.table(),
                                "ts": disc_mod._load().get("ts")})
@@ -814,6 +879,19 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/value_remove":
             vb_mod.remove_bet(body.get("id", ""))
             return self._send(vb_mod.summary())
+
+        if url.path == "/api/league_refresh":
+            slug = body.get("slug", "")
+            if slug not in lg_mod.LEAGUES:
+                return self._send({"error": "unknown league"}, 400)
+            try:
+                d = lg_mod.build(slug, seasons=int(body.get("seasons", 2)), force=True)
+                return self._send({"ok": True, "slug": slug, "name": d["name"],
+                                   "matchesPlayed": d["matchesPlayed"],
+                                   "teams": len(d["elo"]), "homeAdv": d["homeAdv"],
+                                   "avgGoals": d["avgGoals"]})
+            except Exception as e:
+                return self._send({"ok": False, "error": str(e)}, 500)
 
         if url.path == "/api/refresh_discipline":
             try:
